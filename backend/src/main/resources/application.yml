@@ -1,0 +1,45 @@
+spring:
+  application:
+    name: shiguang-api
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/shiguang}
+    username: ${DATABASE_USER:shiguang}
+    password: ${DATABASE_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  session:
+    jdbc:
+      initialize-schema: never
+    timeout: 12h
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 22MB
+server:
+  shutdown: graceful
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        secure: ${COOKIE_SECURE:true}
+        same-site: lax
+  error:
+    include-message: never
+    include-stacktrace: never
+ark:
+  api-key: ${ARK_API_KEY:}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true

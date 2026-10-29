@@ -1,0 +1,364 @@
+openapi: 3.0.3
+info:
+  title: 拾光 API
+  version: 0.1.0
+  description: 初始工程的已实现接口。所有写操作必须提交 CSRF 请求头。
+servers:
+  - url: /api/v1
+security:
+  - session: []
+paths:
+  /auth/me:
+    get:
+      security: []
+      responses:
+        "200":
+          description: 当前用户，匿名时 name 和 role 为 null
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string, nullable: true }
+                  role: { type: string, nullable: true }
+  /auth/csrf:
+    get:
+      security: []
+      responses:
+        "200":
+          description: 写操作请求头
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token, headerName]
+                properties:
+                  token: { type: string }
+                  headerName: { type: string }
+  /auth/login:
+    post:
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, maxLength: 80 }
+                password: { type: string, maxLength: 200 }
+      responses:
+        "200": { description: 登录成功并轮换会话 ID }
+        "401": { description: 账户或密码错误 }
+        "429": { description: 请稍后重试 }
+  /auth/logout:
+    post:
+      responses:
+        "204": { description: 会话已销毁 }
+  /public/memories:
+    get:
+      security: []
+      parameters:
+        - {
+            name: page,
+            in: query,
+            schema: { type: integer, minimum: 0, default: 0 },
+          }
+      responses:
+        "200":
+          description: 24 条公开精选，按日期倒序
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PublicMemory" }
+        "403": { description: 时光模块未向访客开放 }
+  /public/memories/{id}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    get:
+      security: []
+      responses:
+        "200":
+          description: 公开详情
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicMemory" }
+        "404": { description: 不存在、草稿、私密或已删除 }
+        "403": { description: 时光模块未向访客开放 }
+  /memories:
+    get:
+      parameters:
+        - {
+            name: page,
+            in: query,
+            schema: { type: integer, minimum: 0, default: 0 },
+          }
+      responses:
+        "200":
+          description: 24 条完整回忆，按日期倒序
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PrivateMemory" }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MemoryInput" }
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateMemory" }
+  /memories/{id}:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/MemoryInput" }
+      responses:
+        "200":
+          description: 更新成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateMemory" }
+        "409": { description: 版本冲突，请保留输入并重新载入 }
+    delete:
+      responses:
+        "204": { description: 移入回收站 }
+  /trash:
+    get:
+      responses:
+        "200":
+          description: 回收站最近 100 条
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/PrivateMemory" }
+  /trash/{id}/restore:
+    parameters:
+      - {
+          name: id,
+          in: path,
+          required: true,
+          schema: { type: string, format: uuid },
+        }
+    post:
+      responses:
+        "204": { description: 已恢复 }
+  /anniversaries:
+    get:
+      responses:
+        "200":
+          description: 纪念日
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Anniversary" }
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnniversaryInput" }
+      responses:
+        "200":
+          description: 已创建，默认私密
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Anniversary" }
+  /anniversaries/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnniversaryInput" }
+      responses:
+        "200":
+          description: 修改成功
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Anniversary" }
+    delete:
+      responses:
+        "204": { description: 已删除 }
+  /anniversaries/reorder:
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items: { type: string, format: uuid }
+      responses:
+        "204": { description: 排序已更新 }
+  /public/anniversaries:
+    get:
+      security: []
+      responses:
+        "200":
+          description: 公开纪念日
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Anniversary" }
+        "403": { description: 纪念日模块未向访客开放 }
+  /public/privacy:
+    get:
+      security: []
+      responses:
+        "200":
+          description: 当前访客可见范围
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivacyPolicy" }
+  /admin/privacy:
+    get:
+      responses:
+        "200":
+          description: 管理员读取访客可见范围
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivacyPolicy" }
+        "403": { description: 仅管理员可以读取 }
+    put:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrivacyPolicy" }
+      responses:
+        "200":
+          description: 访客可见范围已更新
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivacyPolicy" }
+        "403": { description: 仅管理员可以修改 }
+components:
+  securitySchemes:
+    session: { type: apiKey, in: cookie, name: SESSION }
+  schemas:
+    PrivacyPolicy:
+      type: object
+      required: [mode, home, timeline, anniversaries, albums, places]
+      properties:
+        mode:
+          type: string
+          enum: [PRIVATE, SELECTED]
+        home: { type: boolean }
+        timeline: { type: boolean }
+        anniversaries: { type: boolean }
+        albums: { type: boolean }
+        places: { type: boolean }
+    MemoryInput:
+      type: object
+      required:
+        [
+          title,
+          body,
+          date,
+          city,
+          tag,
+          image,
+          published,
+          publicVisible,
+          publicSummary,
+          version,
+        ]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 120 }
+        body: { type: string, minLength: 1, maxLength: 20000 }
+        date: { type: string, format: date }
+        city: { type: string, maxLength: 60 }
+        tag: { type: string, maxLength: 40 }
+        image: { type: string, maxLength: 4000000 }
+        published: { type: boolean, default: false }
+        publicVisible: { type: boolean, default: false }
+        publicSummary: { type: string, maxLength: 500 }
+        version: { type: integer, format: int64 }
+    PublicMemory:
+      type: object
+      required:
+        [
+          id,
+          title,
+          date,
+          city,
+          tag,
+          image,
+          publicSummary,
+          published,
+          publicVisible,
+        ]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        date: { type: string, format: date }
+        city: { type: string }
+        tag: { type: string }
+        image: { type: string }
+        publicSummary: { type: string }
+        published: { type: boolean }
+        publicVisible: { type: boolean }
+    PrivateMemory:
+      allOf:
+        - { $ref: "#/components/schemas/PublicMemory" }
+        - type: object
+          required: [body, version, deleted]
+          properties:
+            body: { type: string }
+            version: { type: integer, format: int64 }
+            deleted: { type: boolean }
+    AnniversaryInput:
+      type: object
+      required: [title, date, annual]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 100 }
+        date: { type: string, format: date }
+        annual: { type: boolean }
+        lunar:
+          nullable: true
+          allOf: [{ $ref: "#/components/schemas/LunarDate" }]
+    LunarDate:
+      type: object
+      required: [month, day]
+      properties:
+        month: { type: integer, minimum: 1, maximum: 12 }
+        day: { type: integer, minimum: 1, maximum: 30 }
+    Anniversary:
+      allOf:
+        - { $ref: "#/components/schemas/AnniversaryInput" }
+        - type: object
+          required: [id, sortOrder]
+          properties:
+            id: { type: string, format: uuid }
+            sortOrder: { type: integer }

@@ -1,0 +1,7 @@
+package cn.shiguang;
+import org.junit.jupiter.api.Test;import static org.junit.jupiter.api.Assertions.*;import static org.mockito.Mockito.*;import java.time.*;import java.util.*;import com.fasterxml.jackson.databind.ObjectMapper;import org.springframework.web.server.ResponseStatusException;
+class MemoryServiceTest {
+ @Test void publicProjectionNeverContainsPrivateBodyOrAuthor()throws Exception{Memory m=new Memory();m.title="公开标题";m.body="私密正文";m.author="secret-account";m.publicSummary="公开摘要";var json=new ObjectMapper().writeValueAsString(MemoryService.publicView(m));assertFalse(json.contains("私密正文"));assertFalse(json.contains("secret-account"));assertFalse(json.contains("version"));assertTrue(json.contains("公开摘要"));}
+@Test void editingOldVersionIsRejected(){var repo=mock(MemoryRepository.class);var service=new MemoryService(repo);var m=new Memory();m.version=2;when(repo.findById(m.id)).thenReturn(Optional.of(m));var input=new MemoryService.Input("标题","正文",LocalDate.now(),"杭州","旅行","",true,false,"",1);var error=assertThrows(ResponseStatusException.class,()->service.save(m.id,input,"one"));assertEquals(409,error.getStatusCode().value());verify(repo,never()).saveAndFlush(any());}
+@Test void publishingRequiresIndependentSummary(){var repo=mock(MemoryRepository.class);var service=new MemoryService(repo);var input=new MemoryService.Input("标题","不可截取的私密正文",LocalDate.now(),"杭州","旅行","",true,true,"",0);assertThrows(ResponseStatusException.class,()->service.save(null,input,"one"));verify(repo,never()).saveAndFlush(any());}
+}

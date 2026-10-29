@@ -1,0 +1,14 @@
+{$DOMAIN} {
+  encode zstd gzip
+  header {
+    Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    -Server
+  }
+  reverse_proxy web:80 {
+    header_up X-Forwarded-Proto https
+  }
+  log {
+    output stdout
+    format json
+  }
+}

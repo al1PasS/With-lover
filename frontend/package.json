@@ -1,0 +1,37 @@
+{
+  "name": "shiguang",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "test": "vitest run",
+    "preview": "vite preview --host 127.0.0.1",
+    "typegen": "openapi-typescript ../contracts/openapi.yaml -o src/api/schema.d.ts",
+    "e2e": "playwright test",
+    "format": "prettier --write src vite.config.ts playwright.config.ts"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "2.1.10",
+    "@radix-ui/react-dialog": "1.1.15",
+    "@tailwindcss/vite": "4.1.14",
+    "@vitejs/plugin-react": "5.0.4",
+    "motion": "12.23.24",
+    "react": "19.1.1",
+    "react-dom": "19.1.1",
+    "react-router-dom": "7.18.4",
+    "tailwindcss": "4.1.14"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.1",
+    "@types/react": "19.1.16",
+    "@types/react-dom": "19.1.9",
+    "lighthouse": "13.5.0",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.9",
+    "typescript": "5.9.2",
+    "vite": "7.3.6",
+    "vitest": "4.1.11"
+  }
+}
