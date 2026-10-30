@@ -14,7 +14,8 @@ type Particle = {
   kind: "heart" | "bubble";
 };
 
-const POINT_COUNT = 12;
+const POINT_COUNT = 9;
+const MAX_PARTICLES = 22;
 
 /** A decorative, pointer-transparent satin ribbon for fine-pointer devices. */
 export default function SilkCursorTrail() {
@@ -28,7 +29,7 @@ export default function SilkCursorTrail() {
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
     if (!finePointer.matches || reducedMotion.matches) return;
 
-    const context = canvas.getContext("2d");
+    const context = canvas.getContext("2d", { alpha: true, desynchronized: true });
     if (!context) return;
 
     const points: Point[] = Array.from({ length: POINT_COUNT }, () => ({
@@ -36,8 +37,11 @@ export default function SilkCursorTrail() {
       y: 0,
     }));
     const target: Point = { x: 0, y: 0 };
+    const leftEdge: Point[] = Array.from({ length: POINT_COUNT }, () => ({ x: 0, y: 0 }));
+    const rightEdge: Point[] = Array.from({ length: POINT_COUNT }, () => ({ x: 0, y: 0 }));
     const particles: Particle[] = [];
     let frame = 0;
+    let running = false;
     let lastTime = performance.now();
     let lastMove = -Infinity;
     let hasPosition = false;
@@ -47,12 +51,21 @@ export default function SilkCursorTrail() {
     let lastEmitPoint: Point = { x: 0, y: 0 };
 
     function resize() {
-      pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const viewportPixels = innerWidth * innerHeight;
+      pixelRatio = Math.min(window.devicePixelRatio || 1, viewportPixels > 1_500_000 ? 1 : 1.5);
       canvas!.width = Math.round(innerWidth * pixelRatio);
       canvas!.height = Math.round(innerHeight * pixelRatio);
       canvas!.style.width = `${innerWidth}px`;
       canvas!.style.height = `${innerHeight}px`;
       context!.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      wake();
+    }
+
+    function wake() {
+      if (running || document.hidden) return;
+      running = true;
+      lastTime = performance.now();
+      frame = requestAnimationFrame(animate);
     }
 
     function move(event: PointerEvent) {
@@ -75,19 +88,23 @@ export default function SilkCursorTrail() {
           lastEmitPoint = { ...target };
         }
       }
+      wake();
     }
 
     function press(event: PointerEvent) {
       if (event.button !== 0) return;
-      emit(event.clientX, event.clientY, 8, true);
+      emit(event.clientX, event.clientY, 6, true);
+      wake();
     }
 
     function leave() {
       lastMove = -Infinity;
+      wake();
     }
 
-    function traceRibbon(side: 1 | -1, backwards = false) {
-      const edge: Point[] = points.map((point, index) => {
+    function updateEdges() {
+      for (let index = 0; index < points.length; index += 1) {
+        const point = points[index];
         const previous = points[Math.max(0, index - 1)];
         const next = points[Math.min(points.length - 1, index + 1)];
         const dx = previous.x - next.x;
@@ -96,17 +113,23 @@ export default function SilkCursorTrail() {
         const progress = index / (points.length - 1);
         const swell = Math.pow(Math.sin(Math.PI * progress), 0.72);
         const width = (2 + 8.5 * swell) * Math.pow(1 - progress, 0.32);
-        return {
-          x: point.x + (-dy / length) * width * side,
-          y: point.y + (dx / length) * width * side,
-        };
-      });
-      if (backwards) edge.reverse();
+        const offsetX = (-dy / length) * width;
+        const offsetY = (dx / length) * width;
+        leftEdge[index].x = point.x + offsetX;
+        leftEdge[index].y = point.y + offsetY;
+        rightEdge[index].x = point.x - offsetX;
+        rightEdge[index].y = point.y - offsetY;
+      }
+    }
 
-      context!.lineTo(edge[0].x, edge[0].y);
-      for (let index = 1; index < edge.length - 1; index += 1) {
-        const midpointX = (edge[index].x + edge[index + 1].x) / 2;
-        const midpointY = (edge[index].y + edge[index + 1].y) / 2;
+    function traceEdge(edge: Point[], backwards = false) {
+      const firstIndex = backwards ? edge.length - 1 : 0;
+      context!.lineTo(edge[firstIndex].x, edge[firstIndex].y);
+      for (let step = 1; step < edge.length - 1; step += 1) {
+        const index = backwards ? edge.length - 1 - step : step;
+        const nextIndex = backwards ? index - 1 : index + 1;
+        const midpointX = (edge[index].x + edge[nextIndex].x) / 2;
+        const midpointY = (edge[index].y + edge[nextIndex].y) / 2;
         context!.quadraticCurveTo(
           edge[index].x,
           edge[index].y,
@@ -114,7 +137,7 @@ export default function SilkCursorTrail() {
           midpointY,
         );
       }
-      const end = edge[edge.length - 1];
+      const end = edge[backwards ? 0 : edge.length - 1];
       context!.lineTo(end.x, end.y);
     }
 
@@ -132,12 +155,13 @@ export default function SilkCursorTrail() {
       context!.globalAlpha = opacity;
       context!.globalCompositeOperation = "screen";
       context!.beginPath();
-      traceRibbon(1);
-      traceRibbon(-1, true);
+      updateEdges();
+      traceEdge(leftEdge);
+      traceEdge(rightEdge, true);
       context!.closePath();
       context!.fillStyle = gradient;
       context!.shadowColor = "rgba(220, 104, 143, 0.38)";
-      context!.shadowBlur = 15;
+      context!.shadowBlur = 8;
       context!.fill();
 
       // A slim shifting highlight gives the translucent ribbon a satin fold.
@@ -161,13 +185,13 @@ export default function SilkCursorTrail() {
       context!.beginPath();
       context!.arc(head.x, head.y, 2.6, 0, Math.PI * 2);
       context!.fillStyle = "rgba(255, 225, 236, 0.86)";
-      context!.shadowBlur = 9;
+      context!.shadowBlur = 5;
       context!.fill();
       context!.restore();
     }
 
     function emit(x: number, y: number, count: number, burst: boolean) {
-      const available = Math.max(0, 34 - particles.length);
+      const available = Math.max(0, MAX_PARTICLES - particles.length);
       for (let index = 0; index < Math.min(count, available); index += 1) {
         const angle = burst
           ? Math.PI * (1.08 + Math.random() * 0.84)
@@ -264,7 +288,25 @@ export default function SilkCursorTrail() {
         if (opacity > 0.008) drawRibbon();
       }
       drawParticles(deltaMs);
-      frame = requestAnimationFrame(animate);
+      const headDistance = hasPosition
+        ? Math.hypot(target.x - points[0].x, target.y - points[0].y)
+        : 0;
+      if (now - lastMove < 150 || opacity > 0.008 || particles.length > 0 || headDistance > 0.2) {
+        frame = requestAnimationFrame(animate);
+      } else {
+        running = false;
+        context!.clearRect(0, 0, innerWidth, innerHeight);
+      }
+    }
+
+    function visibilityChange() {
+      if (document.hidden) {
+        cancelAnimationFrame(frame);
+        running = false;
+        context!.clearRect(0, 0, innerWidth, innerHeight);
+      } else if (hasPosition || particles.length) {
+        wake();
+      }
     }
 
     resize();
@@ -272,7 +314,7 @@ export default function SilkCursorTrail() {
     addEventListener("pointermove", move, { passive: true });
     addEventListener("pointerdown", press, { passive: true });
     document.documentElement.addEventListener("mouseleave", leave);
-    frame = requestAnimationFrame(animate);
+    document.addEventListener("visibilitychange", visibilityChange);
 
     return () => {
       cancelAnimationFrame(frame);
@@ -280,6 +322,7 @@ export default function SilkCursorTrail() {
       removeEventListener("pointermove", move);
       removeEventListener("pointerdown", press);
       document.documentElement.removeEventListener("mouseleave", leave);
+      document.removeEventListener("visibilitychange", visibilityChange);
     };
   }, []);
 

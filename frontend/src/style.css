@@ -32,8 +32,16 @@
 * {
   box-sizing: border-box;
 }
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
 body {
   margin: 0;
+  overflow-x: clip;
 }
 .silk-cursor-trail {
   position: fixed;
@@ -128,6 +136,7 @@ button,
   gap: 8px;
 }
 main {
+  width: 100%;
   max-width: 1200px;
   padding: 0 32px;
   margin: auto;
@@ -363,12 +372,19 @@ main {
   transform: rotate(3deg);
   position: relative;
 }
-.hero-photo > img {
+.hero-photo > img,
+.hero-photo-placeholder {
   aspect-ratio: 1.38;
   width: 100%;
+}
+.hero-photo > img {
   object-fit: contain;
   object-position: 62% center;
   background: color-mix(in srgb, var(--soft) 45%, var(--surface));
+}
+.hero-photo-placeholder {
+  background: linear-gradient(105deg, var(--soft) 25%, var(--surface) 38%, var(--soft) 52%);
+  background-size: 220% 100%;
 }
 .photo-caption {
   display: flex;
@@ -925,22 +941,6 @@ footer {
   inset: 0;
   z-index: -1;
   background: linear-gradient(90deg, #2c2117b8, #2c211718 42%, #2c211775);
-}
-.place-city-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  font-size: 27px;
-  letter-spacing: .12em;
-  font-weight: 600;
-}
-.place-city-line em {
-  font-family: STKaiti, KaiTi, serif;
-  font-size: clamp(34px, 5vw, 54px);
-  font-style: normal;
-  font-weight: 700;
-  margin-left: 9px;
 }
 .custom-place p {
   margin-top: 5px;
@@ -1586,7 +1586,8 @@ footer {
   footer {
     margin: 30px 32px 0;
   }
-  .hero-photo > img {
+  .hero-photo > img,
+  .hero-photo-placeholder {
     aspect-ratio: 1.08;
   }
   .date-sticker {
@@ -1632,23 +1633,31 @@ footer {
     min-height: auto;
   }
   .hero-copy {
-    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    column-gap: 12px;
+    align-items: center;
   }
   .couple-label {
+    grid-column: 1 / -1;
     margin-bottom: 20px;
   }
   .hero h1 {
+    grid-column: 1;
     font-size: 42px;
     line-height: 1.38;
   }
   .hero-description {
+    grid-column: 1 / -1;
     font-size: 12px;
     margin-top: 18px;
   }
   .day-counter {
-    position: absolute;
-    right: 0;
-    top: 76px;
+    position: static;
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 72px;
+    margin-top: 0;
     text-align: center;
   }
   .day-counter > span {
@@ -1671,6 +1680,7 @@ footer {
     display: none;
   }
   .hero-buttons {
+    grid-column: 1 / -1;
     margin-top: 23px;
     gap: 24px;
   }
@@ -1682,7 +1692,8 @@ footer {
     padding: 9px 9px 0;
     transform: rotate(2deg);
   }
-  .hero-photo > img {
+  .hero-photo > img,
+  .hero-photo-placeholder {
     aspect-ratio: 1.42;
   }
   .photo-caption {
@@ -1812,7 +1823,8 @@ footer {
     align-items: center;
     gap: 5px;
     color: var(--muted);
-    min-width: 60px;
+    flex: 1 1 0;
+    min-width: 0;
     font-size: 10px;
     min-height: 45px;
   }
@@ -2376,10 +2388,7 @@ footer {
   .round-stage { justify-items: start; }
   .hands { width: 100%; }
   .hands strong { flex: 1; min-width: 0; }
-  .custom-place { min-height: 128px; aspect-ratio: auto; padding: 15px; }
-  .place-city-line { font-size: 17px; }
-  .place-city-line em { font-size: 31px; }
-  .custom-place:has(.place-admin-actions) .place-city-line { padding-right: 128px; }
+  .custom-place { min-height: 0; aspect-ratio: 7 / 1; padding: 0; }
   .place-caption { left: 15px; bottom: 12px; max-width: 68%; }
   .place-admin-actions { right: 8px; top: 8px; }
   .album-collection-wall { grid-template-columns: 1fr; gap: 14px; }

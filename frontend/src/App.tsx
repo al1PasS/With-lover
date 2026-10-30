@@ -70,6 +70,19 @@ const privacyModules = [
   ["places", "足迹", "展示管理员发布的城市长卷"],
 ] as const;
 const demo = import.meta.env.VITE_DEMO !== "false";
+const bundledCover = "/images/cover.webp";
+function decodeCover(raw: string | null | undefined) {
+  if (!raw) return bundledCover;
+  try {
+    const value = JSON.parse(raw);
+    return typeof value === "string" && value ? value : bundledCover;
+  } catch {
+    return bundledCover;
+  }
+}
+function initialCover() {
+  return demo ? decodeCover(localStorage.getItem("shiguang:cover")) : "";
+}
 function demoPrivacy() {
   try {
     const saved = localStorage.getItem("shiguang:privacy");
@@ -100,7 +113,7 @@ export default function App() {
     [editingPlace, setEditingPlace] = useState<Place | null>(null),
     [imageData, setImageData] = useState(""),
     [placeImage, setPlaceImage] = useState(""),
-    [coverImage, setCoverImage] = useState("/images/cover.webp"),
+    [coverImage, setCoverImage] = useState(initialCover),
     [coverBusy, setCoverBusy] = useState(false),
     [busy, setBusy] = useState(false),
     [formError, setFormError] = useState("");
@@ -135,25 +148,9 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [notice]);
-  useEffect(() => {
-    if (!loaded) return;
-    let active = true;
-    (async () => {
-      try {
-        const raw = demo
-          ? localStorage.getItem("shiguang:cover") || ""
-          : (await request<{ value: string }>(
-              user ? "/settings/cover" : "/public/settings/cover",
-            )).value;
-        if (active && raw) setCoverImage(JSON.parse(raw));
-      } catch {
-        // Keep the bundled cover when there is no saved custom image yet.
-      }
-    })();
-    return () => { active = false; };
-  }, [loaded, user, privacy.home, privacy.mode]);
   async function load() {
     setLoaded(false);
+    setCoverImage("");
     setError("");
     try {
       const [me, policy] = await Promise.all([
@@ -164,21 +161,33 @@ export default function App() {
       setUserRole(me?.role || null);
       setPrivacy(policy);
       setPrivacyDraft(policy);
-      const rows = me?.name || visitorCanView(policy, "timeline")
-        ? await request<Memory[]>((me?.name ? "" : "/public") + "/memories")
-        : [];
-      const trash = me?.name ? await request<Memory[]>("/trash") : [];
+      const signedIn = Boolean(me?.name);
+      const prefix = signedIn ? "" : "/public";
+      const coverRequest = (signedIn || visitorCanView(policy, "home")
+        ? request<{ value: string }>(prefix + "/settings/cover")
+        : Promise.resolve({ value: "" }))
+        .catch(() => ({ value: "" }));
+      const [rows, trash, nextAnniversaries, nextPlaces] = await Promise.all([
+        signedIn || visitorCanView(policy, "timeline")
+          ? request<Memory[]>(prefix + "/memories")
+          : Promise.resolve([]),
+        signedIn ? request<Memory[]>("/trash") : Promise.resolve([]),
+        signedIn || visitorCanView(policy, "anniversaries")
+          ? request<Anniversary[]>(prefix + "/anniversaries")
+          : Promise.resolve([]),
+        signedIn || visitorCanView(policy, "places")
+          ? request<Place[]>(prefix + "/places")
+          : Promise.resolve([]),
+      ]);
       setMemories([...rows, ...trash]);
-      setAnniversaries(
-        me?.name || visitorCanView(policy, "anniversaries")
-          ? await request<Anniversary[]>((me?.name ? "" : "/public") + "/anniversaries")
-          : [],
-      );
-      setPlaces(
-        me?.name || visitorCanView(policy, "places")
-          ? await request<Place[]>((me?.name ? "" : "/public") + "/places")
-          : [],
-      );
+      setAnniversaries(nextAnniversaries);
+      setPlaces(nextPlaces);
+      // Let the page become interactive while a large custom cover continues
+      // downloading. Until then we render a reserved placeholder, never the
+      // obsolete bundled image.
+      setLoaded(true);
+      const cover = await coverRequest;
+      setCoverImage(decodeCover(cover.value));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -630,11 +639,16 @@ export default function App() {
                   <div className="hero-visual">
                     <div className="hero-photo">
                       <div className="tape" />
-                      <img
-                        src={coverImage}
-                        alt="我们的封面照片"
-                        fetchPriority="high"
-                      />
+                      {coverImage ? (
+                        <img
+                          src={coverImage}
+                          alt="我们的封面照片"
+                          fetchPriority="high"
+                          decoding="async"
+                        />
+                      ) : (
+                        <div className="hero-photo-placeholder" role="status" aria-label="封面加载中" />
+                      )}
                       {user && <label className="cover-change"><UploadSimple />{coverBusy ? "处理中" : "更换封面"}<input type="file" accept="image/*" onChange={chooseCover} disabled={coverBusy}/></label>}
                       <div className="photo-caption">
                         <span>和你一起，哪里都是好天气。</span>
@@ -778,7 +792,7 @@ export default function App() {
               <VisitorGate title="这些时光，等登录后再一起翻看" onLogin={() => setModal("login")}/>
             ))}
             {pathname.startsWith("/albums") && (
-              <AlbumsPage user={user} onLogin={() => setModal("login")} memories={visible} albumId={pathname.startsWith("/albums/") ? decodeURIComponent(pathname.slice(8)) : null} publicAllowed={visitorCanView(privacy, "albums")} />
+              <AlbumsPage user={user} onLogin={() => setModal("login")} albumId={pathname.startsWith("/albums/") ? decodeURIComponent(pathname.slice(8)) : null} publicAllowed={visitorCanView(privacy, "albums")} />
             )}
             {pathname === "/records" && <RecordsPage user={user} onLogin={() => setModal("login")} />}
             {pathname === "/play" && <PlayPage user={user} onLogin={() => setModal("login")} />}
@@ -799,10 +813,6 @@ export default function App() {
                     {places.map((place, index) => (
                         <article className="custom-place" key={place.id}>
                           {place.panoramaImage && <img className="place-panorama" src={place.panoramaImage} alt={`${place.city}的旅行长卷`} />}
-                          <div className="place-city-line">
-                            <span>我们与</span>
-                            <em>{place.city}</em>
-                          </div>
                           {(place.visitDate || place.description) && <div className="place-caption"><span>{place.visitDate?.replaceAll("-", ".")}</span><p>{place.description}</p></div>}
                           {userRole === "ADMIN" && <div className="place-admin-actions" aria-label={`${place.city}的管理操作`}>
                             <button onClick={() => movePlace(place.id, -1)} disabled={index === 0} aria-label={`上移${place.city}`}><ArrowUp/></button>

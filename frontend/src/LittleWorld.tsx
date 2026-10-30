@@ -7,7 +7,6 @@ import {
   LockSimple,
 } from "@phosphor-icons/react";
 import { Link, useNavigate } from "react-router-dom";
-import type { Memory } from "./types";
 import { imageFileToData, useSharedState } from "./sharedState";
 
 type Entry = { id: string; type: "message" | "story" | "chat" | "voice"; title: string; body: string; author: string; date: string; audio?: string };
@@ -163,29 +162,32 @@ export function PlayPage({ user, onLogin }: { user: string | null; onLogin: () =
   </>;
 }
 
-export function AlbumsPage({ user, onLogin, memories, albumId, publicAllowed }: { user: string | null; onLogin: () => void; memories: Memory[]; albumId?: string | null; publicAllowed: boolean }) {
+const generatedAlbumIds = new Set(["our-trips", "little-favorites"]);
+
+function removeMemoryPhotos(albums: AlbumCollection[]) {
+  return albums
+    .map((album) => ({
+      ...album,
+      photos: album.photos.filter((photo) => !photo.id.startsWith("memory-")),
+    }))
+    .filter((album) => album.photos.length > 0 || !generatedAlbumIds.has(album.id));
+}
+
+export function AlbumsPage({ user, onLogin, albumId, publicAllowed }: { user: string | null; onLogin: () => void; albumId?: string | null; publicAllowed: boolean }) {
   const navigate = useNavigate();
-  const seeded = useMemo<AlbumCollection[]>(() => {
-    const photos = memories.filter((memory) => memory.image).slice(0, 10).map((memory) => ({ id: `memory-${memory.id}`, src: memory.image, title: memory.title, note: memory.publicSummary || memory.body, date: memory.date }));
-    const eventPhotos = photos.filter((_, index) => index % 2 === 0), thingPhotos = photos.filter((_, index) => index % 2 === 1);
-    return [
-      ...(eventPhotos.length ? [{ id: "our-trips", title: "一起去过的地方", description: "旅行、散步和认真看过的风景。", category: "event" as const, date: eventPhotos[0].date, photos: eventPhotos }] : []),
-      ...(thingPhotos.length ? [{ id: "little-favorites", title: "喜欢的小事物", description: "花、食物和日常里可爱的发现。", category: "thing" as const, date: thingPhotos[0].date, photos: thingPhotos }] : []),
-    ];
-  }, [memories]);
-  const { value: stored, save } = useSharedState<AlbumCollection[] | LegacyAlbumPhoto[]>("albums", user ? seeded : [], Boolean(user) || publicAllowed, !user && publicAllowed);
+  const { value: stored, save } = useSharedState<AlbumCollection[] | LegacyAlbumPhoto[]>("albums", [], Boolean(user) || publicAllowed, !user && publicAllowed);
   const albums = useMemo<AlbumCollection[]>(() => {
     if (!stored.length) return [];
-    if ("photos" in stored[0]) return stored as AlbumCollection[];
+    if ("photos" in stored[0]) return removeMemoryPhotos(stored as AlbumCollection[]);
     const legacy = stored as LegacyAlbumPhoto[];
-    return (["event", "thing"] as const).map((category) => ({
+    return removeMemoryPhotos((["event", "thing"] as const).map((category) => ({
       id: `migrated-${category}`,
       title: category === "event" ? "旧事件照片" : "旧事物照片",
       description: "从旧版照片墙自动整理而来。",
       category,
       date: legacy.find((photo) => photo.category === category)?.date || new Date().toISOString().slice(0, 10),
       photos: legacy.filter((photo) => photo.category === category).map(({ category: _category, ...photo }) => photo),
-    })).filter((album) => album.photos.length);
+    })).filter((album) => album.photos.length));
   }, [stored]);
   const [category, setCategory] = useState<"event" | "thing">("event");
   const [creating, setCreating] = useState(false);

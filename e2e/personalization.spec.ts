@@ -20,6 +20,8 @@ test('personal dates and visible mobile add buttons',async({page})=>{
  await page.getByRole('navigation',{name:'手机导航'}).getByRole('link',{name:'相册'}).click();
  await expect(page.getByRole('button',{name:'事件相册'})).toBeVisible();
  await expect(page.getByRole('button',{name:'事物相册'})).toBeVisible();
+ await expect(page.locator('.album-collection-wall > a')).toHaveCount(0);
+ await expect(page.getByText('这一类还没有相册，先新建一本吧。')).toBeVisible();
  await page.getByRole('button',{name:'新建相册'}).click();
  await expect(page.getByRole('dialog')).toBeVisible();
  await expect(page.getByLabel('相册名称')).toBeVisible();
