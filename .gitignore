@@ -8,3 +8,4 @@ target/
 frontend/test-results/
 frontend/playwright-report/
 backups/
+SERVER_TODO.md

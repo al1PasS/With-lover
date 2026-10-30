@@ -1,6 +1,7 @@
 import { couple, occurrence, anniversaryLabel, anniversaryDays } from "./profile";
 import {
   useEffect,
+  useRef,
   useState,
   type ChangeEvent,
   type FormEvent,
@@ -71,6 +72,41 @@ const privacyModules = [
 ] as const;
 const demo = import.meta.env.VITE_DEMO !== "false";
 const bundledCover = "/images/cover.webp";
+function LoadingBlock({ className = "" }: { className?: string }) {
+  return <span className={`loading-block ${className}`} aria-hidden="true" />;
+}
+function MemoryLoadingCards({ count }: { count: number }) {
+  return <>{Array.from({ length: count }, (_, index) => (
+    <article className="memory-card loading-card" key={index} aria-hidden="true">
+      <LoadingBlock className="loading-photo" />
+      <div className="memory-copy">
+        <LoadingBlock className="loading-line short" />
+        <LoadingBlock className="loading-line title" />
+        <LoadingBlock className="loading-line" />
+        <LoadingBlock className="loading-line medium" />
+      </div>
+    </article>
+  ))}</>;
+}
+function AnniversaryLoadingRows() {
+  return <div className="anniversary-loading" role="status" aria-label="纪念日加载中">
+    {Array.from({ length: 3 }, (_, index) => <LoadingBlock className="loading-anniversary-row" key={index} />)}
+  </div>;
+}
+function PlaceLoadingCards() {
+  return <div className="place-loading" role="status" aria-label="足迹加载中">
+    {Array.from({ length: 3 }, (_, index) => <LoadingBlock className="loading-place" key={index} />)}
+  </div>;
+}
+function AnniversaryLoadingCards() {
+  return <>{Array.from({ length: 3 }, (_, index) => (
+    <article className="anniversary-paper loading-anniversary-card" key={index} aria-hidden="true">
+      <LoadingBlock className="loading-line medium" />
+      <LoadingBlock className="loading-line" />
+      <LoadingBlock className="loading-number" />
+    </article>
+  ))}</>;
+}
 function decodeCover(raw: string | null | undefined) {
   if (!raw) return bundledCover;
   try {
@@ -99,6 +135,10 @@ export default function App() {
     [user, setUser] = useState<string | null>(() => demo ? sessionStorage.getItem("shiguang:demo-user") : null),
     [userRole, setUserRole] = useState<string | null>(() => demo && sessionStorage.getItem("shiguang:demo-user") ? "ADMIN" : null),
     [loaded, setLoaded] = useState(demo),
+    [memoriesLoading, setMemoriesLoading] = useState(false),
+    [anniversariesLoading, setAnniversariesLoading] = useState(false),
+    [placesLoading, setPlacesLoading] = useState(false),
+    [placesLoaded, setPlacesLoaded] = useState(demo),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [modal, setModal] = useState<
@@ -120,6 +160,7 @@ export default function App() {
   const [privacy, setPrivacy] = useState<PrivacyPolicy>(() => demo ? demoPrivacy() : defaultPrivacy);
   const [privacyDraft, setPrivacyDraft] = useState<PrivacyPolicy>(() => demo ? demoPrivacy() : defaultPrivacy);
   const [privacyBusy, setPrivacyBusy] = useState(false);
+  const loadGeneration = useRef(0);
   const [dark, setDark] = useState(
     () => matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -149,54 +190,96 @@ export default function App() {
     }
   }, [notice]);
   async function load() {
+    const generation = ++loadGeneration.current;
     setLoaded(false);
     setCoverImage("");
     setError("");
+    setMemoriesLoading(true);
+    setAnniversariesLoading(true);
+    setPlacesLoading(false);
+    setPlacesLoaded(false);
+    setPlaces([]);
     try {
       const [me, policy] = await Promise.all([
         request<{ name: string | null; role: string | null }>("/auth/me"),
         request<PrivacyPolicy>("/public/privacy"),
       ]);
-      setUser(me?.name || null);
+      if (generation !== loadGeneration.current) return;
+      const nextUser = me?.name || null;
+      setUser(nextUser);
       setUserRole(me?.role || null);
       setPrivacy(policy);
       setPrivacyDraft(policy);
-      const signedIn = Boolean(me?.name);
+      setLoaded(true);
+      const signedIn = Boolean(nextUser);
       const prefix = signedIn ? "" : "/public";
-      const coverRequest = (signedIn || visitorCanView(policy, "home")
+      void (signedIn || visitorCanView(policy, "home")
         ? request<{ value: string }>(prefix + "/settings/cover")
         : Promise.resolve({ value: "" }))
-        .catch(() => ({ value: "" }));
-      const [rows, trash, nextAnniversaries, nextPlaces] = await Promise.all([
-        signedIn || visitorCanView(policy, "timeline")
-          ? request<Memory[]>(prefix + "/memories")
-          : Promise.resolve([]),
+        .then((cover) => {
+          if (generation === loadGeneration.current) setCoverImage(decodeCover(cover.value));
+        })
+        .catch(() => {
+          if (generation === loadGeneration.current) setCoverImage(bundledCover);
+        });
+
+      void Promise.all([
+        signedIn || visitorCanView(policy, "timeline") ? request<Memory[]>(prefix + "/memories") : Promise.resolve([]),
         signedIn ? request<Memory[]>("/trash") : Promise.resolve([]),
-        signedIn || visitorCanView(policy, "anniversaries")
-          ? request<Anniversary[]>(prefix + "/anniversaries")
-          : Promise.resolve([]),
-        signedIn || visitorCanView(policy, "places")
-          ? request<Place[]>(prefix + "/places")
-          : Promise.resolve([]),
-      ]);
-      setMemories([...rows, ...trash]);
-      setAnniversaries(nextAnniversaries);
-      setPlaces(nextPlaces);
-      // Let the page become interactive while a large custom cover continues
-      // downloading. Until then we render a reserved placeholder, never the
-      // obsolete bundled image.
-      setLoaded(true);
-      const cover = await coverRequest;
-      setCoverImage(decodeCover(cover.value));
+      ]).then(([rows, trash]) => {
+        if (generation === loadGeneration.current) setMemories([...rows, ...trash]);
+      }).catch((e) => {
+        if (generation === loadGeneration.current) setError((e as Error).message);
+      }).finally(() => {
+        if (generation === loadGeneration.current) setMemoriesLoading(false);
+      });
+
+      void (signedIn || visitorCanView(policy, "anniversaries")
+        ? request<Anniversary[]>(prefix + "/anniversaries")
+        : Promise.resolve([]))
+        .then((rows) => {
+          if (generation === loadGeneration.current) setAnniversaries(rows);
+        }).catch((e) => {
+          if (generation === loadGeneration.current) setError((e as Error).message);
+        }).finally(() => {
+          if (generation === loadGeneration.current) setAnniversariesLoading(false);
+        });
     } catch (e) {
-      setError((e as Error).message);
+      if (generation === loadGeneration.current) {
+        setError((e as Error).message);
+        setMemoriesLoading(false);
+        setAnniversariesLoading(false);
+      }
     } finally {
-      setLoaded(true);
+      if (generation === loadGeneration.current) setLoaded(true);
     }
   }
   useEffect(() => {
     if (!demo) void load();
   }, []);
+  useEffect(() => {
+    if (demo || !loaded || pathname !== "/places" || placesLoaded || placesLoading) return;
+    if (!user && !visitorCanView(privacy, "places")) {
+      setPlacesLoaded(true);
+      return;
+    }
+    const generation = loadGeneration.current;
+    setPlacesLoading(true);
+    const prefix = user ? "" : "/public";
+    void request<Place[]>(prefix + "/places")
+      .then((rows) => {
+        if (generation === loadGeneration.current) setPlaces(rows);
+      })
+      .catch((e) => {
+        if (generation === loadGeneration.current) setError((e as Error).message);
+      })
+      .finally(() => {
+        if (generation === loadGeneration.current) {
+          setPlacesLoading(false);
+          setPlacesLoaded(true);
+        }
+      });
+  }, [loaded, pathname, placesLoaded, placesLoading, privacy, user]);
   async function savePrivacy() {
     setPrivacyBusy(true);
     try {
@@ -688,8 +771,8 @@ export default function App() {
                       </Link>
                     </div>
                     <div className="memory-grid">
-                      {visible.slice(0, 2).map(card)}
-                      {visible.length === 0 && (
+                      {memoriesLoading ? <MemoryLoadingCards count={2} /> : visible.slice(0, 2).map(card)}
+                      {!memoriesLoading && visible.length === 0 && (
                         <div className="home-memory-empty">
                           <LockSimple weight="duotone"/>
                           <p>{visitorCanView(privacy, "timeline") ? "还没有写给访客看的时光。" : "这里的故事，登录后再慢慢翻。"}</p>
@@ -706,7 +789,7 @@ export default function App() {
                           <ArrowUpRight size={20} />
                         </Link>
                       </div>
-                      {anniversaries
+                      {anniversariesLoading ? <AnniversaryLoadingRows /> : anniversaries
                         .slice(0, 4)
                         .map((a) => {
                           const d = anniversaryDays(a);
@@ -779,8 +862,10 @@ export default function App() {
                     />
                   </label>
                 </div>
-                <div className="timeline-grid">{filtered.map(card)}</div>
-                {filtered.length === 0 && (
+                <div className="timeline-grid">
+                  {memoriesLoading ? <MemoryLoadingCards count={4} /> : filtered.map(card)}
+                </div>
+                {!memoriesLoading && filtered.length === 0 && (
                   <div className="empty">
                     <Notebook size={42} />
                     <h2>这里还没有回忆</h2>
@@ -810,7 +895,7 @@ export default function App() {
                   ) : undefined,
                 )}
                 <section className="place-stories">
-                    {places.map((place, index) => (
+                    {placesLoading ? <PlaceLoadingCards /> : places.map((place, index) => (
                         <article className="custom-place" key={place.id}>
                           {place.panoramaImage && <img className="place-panorama" src={place.panoramaImage} alt={`${place.city}的旅行长卷`} />}
                           {(place.visitDate || place.description) && <div className="place-caption"><span>{place.visitDate?.replaceAll("-", ".")}</span><p>{place.description}</p></div>}
@@ -822,7 +907,7 @@ export default function App() {
                           </div>}
                         </article>
                       ))}
-                    {places.length === 0 && (
+                    {!placesLoading && places.length === 0 && (
                       <div className="empty module-empty">
                         <MapPin size={42} />
                         <h2>足迹还没有内容</h2>
@@ -847,7 +932,7 @@ export default function App() {
                   ) : undefined,
                 )}
                 <div className="anniversary-grid">
-                  {anniversaries.map((a, index) => {
+                  {anniversariesLoading ? <AnniversaryLoadingCards /> : anniversaries.map((a, index) => {
                     const d = anniversaryDays(a);
                     return (
                       <article className="anniversary-paper" key={a.id}>
@@ -892,7 +977,7 @@ export default function App() {
                       </article>
                     );
                   })}
-                  {user && (
+                  {user && !anniversariesLoading && (
                     <button
                       className="anniversary-paper add-card"
                       onClick={() => openAnniversary()}

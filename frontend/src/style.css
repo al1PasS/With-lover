@@ -1475,6 +1475,46 @@ footer {
   border-radius: 16px;
   background: var(--soft);
 }
+.loading-block {
+  display: block;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--soft) 84%, var(--line));
+}
+.loading-card {
+  pointer-events: none;
+  box-shadow: none;
+}
+.loading-card .memory-copy {
+  display: grid;
+  gap: 12px;
+}
+.loading-photo {
+  margin: 9px 9px 0;
+  aspect-ratio: 1.53;
+}
+.loading-line { height: 9px; width: 100%; }
+.loading-line.short { width: 32%; }
+.loading-line.medium { width: 68%; }
+.loading-line.title { width: 52%; height: 14px; margin: 2px 0; }
+.anniversary-loading {
+  display: grid;
+  gap: 10px;
+  min-height: 134px;
+}
+.loading-anniversary-row { height: 35px; }
+.place-loading {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+}
+.loading-place {
+  width: 100%;
+  min-height: 142px;
+  aspect-ratio: 7 / 1;
+  border-radius: 10px;
+}
+.loading-anniversary-card { min-height: 132px; }
+.loading-number { width: 35%; height: 28px; }
 @media (prefers-reduced-motion: no-preference) {
   .hero-copy {
     animation: enter 0.7s ease-out;
@@ -1482,7 +1522,8 @@ footer {
   .hero-visual {
     animation: enter 0.9s ease-out;
   }
-  .skeleton {
+  .skeleton,
+  .loading-block {
     animation: pulse 1.3s ease-in-out infinite;
   }
   @keyframes enter {
