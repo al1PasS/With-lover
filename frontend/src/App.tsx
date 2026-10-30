@@ -213,15 +213,9 @@ export default function App() {
       setLoaded(true);
       const signedIn = Boolean(nextUser);
       const prefix = signedIn ? "" : "/public";
-      void (signedIn || visitorCanView(policy, "home")
-        ? request<{ value: string }>(prefix + "/settings/cover")
-        : Promise.resolve({ value: "" }))
-        .then((cover) => {
-          if (generation === loadGeneration.current) setCoverImage(decodeCover(cover.value));
-        })
-        .catch(() => {
-          if (generation === loadGeneration.current) setCoverImage(bundledCover);
-        });
+      if (signedIn || visitorCanView(policy, "home")) {
+        setCoverImage(`/api/v1${prefix}/media/cover`);
+      }
 
       void Promise.all([
         signedIn || visitorCanView(policy, "timeline") ? request<Memory[]>(prefix + "/memories") : Promise.resolve([]),
