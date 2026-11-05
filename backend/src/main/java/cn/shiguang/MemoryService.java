@@ -10,7 +10,8 @@ import java.util.UUID;
 @Service
 class MemoryService {
  private final MemoryRepository repo;
- MemoryService(MemoryRepository repo){this.repo=repo;}
+ private final ActivityService activity;
+ MemoryService(MemoryRepository repo,ActivityService activity){this.repo=repo;this.activity=activity;}
  record Input(@NotBlank @Size(max=120) String title,@NotBlank @Size(max=20000) String body,@NotNull LocalDate date,@NotNull @Size(max=60) String city,@NotBlank @Size(max=40) String tag,@NotNull @Size(max=4_000_000) String image,boolean published,boolean publicVisible,@NotNull @Size(max=500) String publicSummary,long version){}
  record PrivateView(UUID id,String title,String body,LocalDate date,String city,String tag,String image,boolean published,boolean publicVisible,String publicSummary,long version,boolean deleted){}
  // Dedicated public DTO: never include private body, author, version or exact coordinates.
@@ -23,7 +24,14 @@ class MemoryService {
   if(m.deletedAt!=null)throw new ResponseStatusException(HttpStatus.NOT_FOUND);
   if(id!=null&&in.version()!=m.version)throw new ResponseStatusException(HttpStatus.CONFLICT,"这段回忆已被更新，请保留输入并重新载入后合并");
   if(in.publicVisible()&&in.publicSummary().isBlank())throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"请填写独立公开摘要");
-  m.title=in.title();m.body=in.body();m.date=in.date();m.city=in.city();m.tag=in.tag();m.image=in.image();m.published=in.published();m.publicVisible=in.publicVisible();m.publicSummary=in.publicSummary();m.author=author;m.updatedAt=Instant.now();return privateView(repo.saveAndFlush(m));
+  java.util.List<String> changes=new java.util.ArrayList<>();
+  if(!java.util.Objects.equals(m.title,in.title()))changes.add("标题");
+  if(!java.util.Objects.equals(m.body,in.body()))changes.add("文字");
+  if(!java.util.Objects.equals(m.image,in.image()))changes.add("封面");
+  if(!java.util.Objects.equals(m.date,in.date()))changes.add("日期");
+  if(!java.util.Objects.equals(m.tag,in.tag()))changes.add("标签");
+  if(m.publicVisible!=in.publicVisible()||!java.util.Objects.equals(m.publicSummary,in.publicSummary()))changes.add("公开设置");
+  m.title=in.title();m.body=in.body();m.date=in.date();m.city=in.city();m.tag=in.tag();m.image=in.image();m.published=in.published();m.publicVisible=in.publicVisible();m.publicSummary=in.publicSummary();m.author=author;m.updatedAt=Instant.now();repo.saveAndFlush(m);if(id==null||!changes.isEmpty())activity.record("memories",m.id.toString(),id==null?"created":"updated",m.title,id==null?"新增了回忆":"更新了"+String.join("、",changes),ActivityService.route("memories",m.id.toString()));return privateView(m);
  }
- @Transactional @PreAuthorize("isAuthenticated()") public void trash(UUID id,boolean restore){Memory m=repo.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));m.deletedAt=restore?null:Instant.now();repo.save(m);}
+ @Transactional @PreAuthorize("isAuthenticated()") public void trash(UUID id,boolean restore){Memory m=repo.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));if((m.deletedAt==null)==!restore){m.deletedAt=restore?null:Instant.now();repo.save(m);activity.record("memories",id.toString(),restore?"restored":"deleted",m.title,restore?"恢复了回忆":"删除了回忆",ActivityService.route("memories",id.toString()));}}
 }

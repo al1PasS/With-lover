@@ -4,6 +4,238 @@
  */
 
 export interface paths {
+    "/account/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前登录账号的资料，不含密码和密码哈希 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AccountProfile"];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description 仅修改当前账号。修改用户名或密码须验证旧密码并退出所有登录会话；昵称可独立修改。 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        nickname?: string;
+                        username?: string;
+                        oldPassword?: string;
+                        newPassword?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 保存成功，loginRequired 为 true 时需重新登录 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            profile: components["schemas"]["AccountProfile"];
+                            loginRequired: boolean;
+                        };
+                    };
+                };
+                /** @description 旧密码不正确、缺少旧密码或输入不合规 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 用户名已被占用 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 旧密码尝试次数过多，请稍后重试 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/activities": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 登录成员的更新记录。仅展示当前账号可见的站内动态，按实际写入顺序倒序；打开列表不会标记已读。 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 包含自己的操作 */
+                    all?: boolean;
+                    /** @description 下一页游标 */
+                    before?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 最多 30 条动态、全局未读数与分页游标 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ActivityFeed"];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activities/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 仅标记当前登录账号已读，重复调用无副作用 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 动态不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/activities/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: int64 */
+                        throughId: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description 标记该游标及之前的动态已读，随后产生的新动态保持未读 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -333,7 +565,35 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 登录成员读取指定回忆，不受列表分页限制 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PrivateMemory"];
+                    };
+                };
+                /** @description 不存在或已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         put?: never;
         post?: never;
         delete: {
@@ -777,6 +1037,40 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        AccountProfile: {
+            id: number;
+            username: string;
+            nickname: string;
+            /** @enum {string} */
+            role: "ADMIN" | "MEMBER";
+        };
+        Activity: {
+            /** Format: int64 */
+            id: number;
+            /** @description 操作者昵称 */
+            actor: string;
+            mine: boolean;
+            module: string;
+            targetId: string;
+            action: string;
+            title: string;
+            summary: string;
+            route: string;
+            /** Format: date-time */
+            createdAt: string;
+            read: boolean;
+            /** @description 目标当前是否已删除 */
+            deleted: boolean;
+        };
+        ActivityFeed: {
+            items: components["schemas"]["Activity"][];
+            /** Format: int64 */
+            unread: number;
+            /** Format: int64 */
+            latestId: number;
+            /** Format: int64 */
+            nextCursor: number | null;
+        };
         PrivacyPolicy: {
             /** @enum {string} */
             mode: "PRIVATE" | "SELECTED";

@@ -6,7 +6,8 @@ import {
   Drop, SunHorizon, Trophy, Leaf, ArrowLeft, FolderOpen, FolderPlus,
   LockSimple,
 } from "@phosphor-icons/react";
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { imageFileToData, useSharedState } from "./sharedState";
 
 type Entry = { id: string; type: "message" | "story" | "chat" | "voice"; title: string; body: string; author: string; date: string; audio?: string };
@@ -52,6 +53,8 @@ export function VisitorGate({ title, onLogin }: { title: string; onLogin: () => 
 
 export function RecordsPage({ user, onLogin }: { user: string | null; onLogin: () => void }) {
   const { value: entries, save } = useSharedState("messages", user ? initialEntries : [], Boolean(user));
+  const [params] = useSearchParams();
+  useEffect(() => { const entry = entries.find(x => x.id === params.get("activity")); if (entry) setType(entry.type); }, [entries, params]);
   const [type, setType] = useState<Entry["type"]>("message");
   const [recording, setRecording] = useState(false);
   const [audioDraft, setAudioDraft] = useState("");
@@ -94,7 +97,7 @@ export function RecordsPage({ user, onLogin }: { user: string | null; onLogin: (
         {type === "voice" && <><button type="button" className={`voice-button ${recording ? "recording" : ""}`} onClick={toggleRecording}><Microphone weight={recording ? "fill" : "regular"}/>{recording ? "正在录音，点一下完成" : audioDraft ? "重新录一段" : "开始录一段声音"}</button>{audioDraft && <audio className="audio-preview" controls src={audioDraft}/>}</>}
         <button className="primary">放进记录盒</button>
       </form>
-      <div className="entry-stream">{entries.filter((x) => x.type === type).map((item) => <article key={item.id}><div><span>{item.date}</span><span>{item.author} 写下</span></div><h2>{item.title}</h2><p>{item.body}</p>{item.audio && <audio controls src={item.audio}/>} {user && <button aria-label={`删除${item.title}`} onClick={() => void save(entries.filter((x) => x.id !== item.id))}><Trash/></button>}</article>)}{entries.filter((x) => x.type === type).length === 0 && <div className="soft-empty"><ChatCircleDots/><p>这一格还空着，等你写下第一句。</p></div>}</div>
+      <div className="entry-stream">{entries.filter((x) => x.type === type).map((item) => <article key={item.id} id={`activity-${item.id}`}><div><span>{item.date}</span><span>{item.author} 写下</span></div><h2>{item.title}</h2><p>{item.body}</p>{item.audio && <audio controls src={item.audio}/>} {user && <button aria-label={`删除${item.title}`} onClick={() => void save(entries.filter((x) => x.id !== item.id))}><Trash/></button>}</article>)}{entries.filter((x) => x.type === type).length === 0 && <div className="soft-empty"><ChatCircleDots/><p>这一格还空着，等你写下第一句。</p></div>}</div>
     </div>
   </>;
 }
@@ -107,7 +110,7 @@ export function WishesPage({ user, onLogin }: { user: string | null; onLogin: ()
   return <>
     <PageTitle title="把以后，也写进今天。" copy="想去的地方、想做的小事、想一起成为的人，都不怕忘记。" />
     <LoginGate user={user} onLogin={onLogin}/>
-    <section className="wish-board"><div className="wish-summary"><FlowerLotus size={44} weight="duotone"/><strong>{open}</strong><span>个愿望，等我们一起实现</span></div><form onSubmit={add}><label htmlFor="new-wish">新的愿望</label><div><input id="new-wish" name="wish" required placeholder="比如：冬天一起去泡温泉"/><button className="primary"><Plus/>写下来</button></div></form><div className="wish-list">{wishes.map((wish) => <article className={wish.done ? "done" : ""} key={wish.id}><button className="wish-check" aria-label={wish.done ? "标记为未完成" : "标记为已完成"} onClick={() => void save(wishes.map((w) => w.id === wish.id ? { ...w, done: !w.done } : w))}>{wish.done && <Check weight="bold"/>}</button><span>{wish.text}</span><button className="wish-delete" aria-label={`删除${wish.text}`} onClick={() => void save(wishes.filter((w) => w.id !== wish.id))}><X/></button></article>)}</div></section>
+    <section className="wish-board"><div className="wish-summary"><FlowerLotus size={44} weight="duotone"/><strong>{open}</strong><span>个愿望，等我们一起实现</span></div><form onSubmit={add}><label htmlFor="new-wish">新的愿望</label><div><input id="new-wish" name="wish" required placeholder="比如：冬天一起去泡温泉"/><button className="primary"><Plus/>写下来</button></div></form><div className="wish-list">{wishes.map((wish) => <article id={`activity-${wish.id}`} className={wish.done ? "done" : ""} key={wish.id}><button className="wish-check" aria-label={wish.done ? "标记为未完成" : "标记为已完成"} onClick={() => void save(wishes.map((w) => w.id === wish.id ? { ...w, done: !w.done } : w))}>{wish.done && <Check weight="bold"/>}</button><span>{wish.text}</span><button className="wish-delete" aria-label={`删除${wish.text}`} onClick={() => void save(wishes.filter((w) => w.id !== wish.id))}><X/></button></article>)}</div></section>
   </>;
 }
 
@@ -228,7 +231,7 @@ export function AlbumsPage({ user, onLogin, albumId, publicAllowed }: { user: st
         <div><span>{album.category === "event" ? "事件相册" : "事物相册"}</span><h1>{album.title}</h1><p>{album.description || "把属于这一册的照片放在一起。"}</p><small>{album.photos.length} 张照片 · {album.date.replaceAll("-", ".")}</small></div>
         {user && <label className="primary album-add"><Camera/>{uploading ? "正在整理照片" : "批量添加照片"}<input type="file" accept="image/*" multiple onChange={addPhotos} disabled={uploading}/></label>}
       </header>
-      <section className="album-photo-grid">{album.photos.map((photo, index) => <button className={index % 7 === 0 ? "album-photo-featured" : ""} key={photo.id} onClick={() => setSelected(photo)}><img src={photo.src} alt={photo.title} loading="lazy"/><span>{photo.title}</span></button>)}{album.photos.length === 0 && <div className="soft-empty"><Images/><p>这本相册还是空的，从右上角添加第一批照片吧。</p></div>}</section>
+      <section className="album-photo-grid">{album.photos.map((photo, index) => <button className={index % 7 === 0 ? "album-photo-featured" : ""} key={photo.id} id={`activity-${photo.id}`} onClick={() => setSelected(photo)}><img src={photo.src} alt={photo.title} loading="lazy"/><span>{photo.title}</span></button>)}{album.photos.length === 0 && <div className="soft-empty"><Images/><p>这本相册还是空的，从右上角添加第一批照片吧。</p></div>}</section>
       {user && <button className="album-delete" onClick={() => removeAlbum(album)}><Trash/>删除这本相册</button>}
       <Dialog.Root open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}><Dialog.Portal><Dialog.Overlay className="overlay"/><Dialog.Content className="modal album-detail"><Dialog.Close className="close" aria-label="关闭照片"><X/></Dialog.Close>{selected && <><div className="album-detail-image"><img src={selected.src} alt={selected.title}/></div><div><span>{selected.date}</span><Dialog.Title>{selected.title}</Dialog.Title><Dialog.Description>{selected.note || `收录在《${album.title}》`}</Dialog.Description>{user && <button className="album-photo-delete" onClick={() => removePhoto(selected)}><Trash/>移出相册</button>}</div></>}</Dialog.Content></Dialog.Portal></Dialog.Root>
     </>;

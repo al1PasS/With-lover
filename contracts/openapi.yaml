@@ -8,6 +8,76 @@ servers:
 security:
   - session: []
 paths:
+  /account/profile:
+    get:
+      responses:
+        "200":
+          description: 当前登录账号的资料，不含密码和密码哈希
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AccountProfile" }
+        "401": { description: 请先登录 }
+    patch:
+      description: 仅修改当前账号。修改用户名或密码须验证旧密码并退出所有登录会话；昵称可独立修改。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nickname: { type: string, minLength: 1, maxLength: 40 }
+                username: { type: string, pattern: '^[a-zA-Z0-9_]{3,40}$' }
+                oldPassword: { type: string, maxLength: 200 }
+                newPassword: { type: string, minLength: 8, maxLength: 200 }
+      responses:
+        "200":
+          description: 保存成功，loginRequired 为 true 时需重新登录
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [profile, loginRequired]
+                properties:
+                  profile: { $ref: "#/components/schemas/AccountProfile" }
+                  loginRequired: { type: boolean }
+        "400": { description: 旧密码不正确、缺少旧密码或输入不合规 }
+        "401": { description: 请先登录 }
+        "409": { description: 用户名已被占用 }
+        "429": { description: 旧密码尝试次数过多，请稍后重试 }
+  /activities:
+    get:
+      description: 登录成员的更新记录。仅展示当前账号可见的站内动态，按实际写入顺序倒序；打开列表不会标记已读。
+      parameters:
+        - { name: all, in: query, schema: { type: boolean, default: false }, description: 包含自己的操作 }
+        - { name: before, in: query, schema: { type: integer, format: int64 }, description: 下一页游标 }
+      responses:
+        "200":
+          description: 最多 30 条动态、全局未读数与分页游标
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ActivityFeed" }
+        "401": { description: 请先登录 }
+  /activities/{id}/read:
+    post:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+      responses:
+        "204": { description: 仅标记当前登录账号已读，重复调用无副作用 }
+        "404": { description: 动态不存在 }
+  /activities/read-all:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [throughId]
+              properties:
+                throughId: { type: integer, format: int64, minimum: 0 }
+      responses:
+        "204": { description: 标记该游标及之前的动态已读，随后产生的新动态保持未读 }
   /auth/me:
     get:
       security: []
@@ -121,6 +191,17 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/PrivateMemory" }
   /memories/{id}:
+    get:
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 登录成员读取指定回忆，不受列表分页限制
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrivateMemory" }
+        "404": { description: 不存在或已删除 }
+
     parameters:
       - {
           name: id,
@@ -267,6 +348,40 @@ components:
   securitySchemes:
     session: { type: apiKey, in: cookie, name: SESSION }
   schemas:
+    AccountProfile:
+      type: object
+      required: [id, username, nickname, role]
+      properties:
+        id: { type: integer }
+        username: { type: string }
+        nickname: { type: string }
+        role: { type: string, enum: [ADMIN, MEMBER] }
+
+    Activity:
+      type: object
+      required: [id, actor, mine, module, targetId, action, title, summary, route, createdAt, read, deleted]
+      properties:
+        id: { type: integer, format: int64 }
+        actor: { type: string, description: 操作者昵称 }
+        mine: { type: boolean }
+        module: { type: string }
+        targetId: { type: string }
+        action: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        route: { type: string }
+        createdAt: { type: string, format: date-time }
+        read: { type: boolean }
+        deleted: { type: boolean, description: 目标当前是否已删除 }
+    ActivityFeed:
+      type: object
+      required: [items, unread, latestId, nextCursor]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/Activity" } }
+        unread: { type: integer, format: int64 }
+        latestId: { type: integer, format: int64 }
+        nextCursor: { type: integer, format: int64, nullable: true }
+
     PrivacyPolicy:
       type: object
       required: [mode, home, timeline, anniversaries, albums, places]

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { demoSettingActivity } from "./Activity";
+import { useLocation } from "react-router-dom";
 import { request } from "./api/client";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
@@ -9,6 +11,7 @@ export function useSharedState<T>(
   enabled = true,
   publicRead = false,
 ) {
+  const location = useLocation();
   const initialValue = useRef(initial);
   const [value, setValue] = useState<T>(initial);
   const [loaded, setLoaded] = useState(false);
@@ -24,9 +27,11 @@ export function useSharedState<T>(
       try {
         const raw = demo
           ? localStorage.getItem(`shiguang:${key}`) || ""
-          : (await request<{ value: string }>(
-              publicRead ? `/public/settings/${key}` : `/settings/${key}`,
-            )).value;
+          : (
+              await request<{ value: string }>(
+                publicRead ? `/public/settings/${key}` : `/settings/${key}`,
+              )
+            ).value;
         if (active && raw) setValue(JSON.parse(raw) as T);
       } catch {
         // An empty or older value should never make the private space unusable.
@@ -34,14 +39,22 @@ export function useSharedState<T>(
         if (active) setLoaded(true);
       }
     })();
-    return () => { active = false; };
-  }, [enabled, key, publicRead]);
+    return () => {
+      active = false;
+    };
+  }, [enabled, key, publicRead, location.key]);
 
   async function save(next: T) {
-    setValue(next);
     const raw = JSON.stringify(next);
-    if (demo) localStorage.setItem(`shiguang:${key}`, raw);
-    else await request(`/settings/${key}`, { method: "PUT", body: JSON.stringify({ value: raw }) });
+    if (demo) {
+      localStorage.setItem(`shiguang:${key}`, raw);
+      demoSettingActivity(key, value, next);
+    } else
+      await request(`/settings/${key}`, {
+        method: "PUT",
+        body: JSON.stringify({ value: raw }),
+      });
+    setValue(next);
   }
 
   return { value, save, loaded };
@@ -57,5 +70,5 @@ export async function imageFileToData(file: File, maxSide = 1800) {
   canvas.height = Math.round(source.height * scale);
   canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
   source.close();
-  return canvas.toDataURL("image/webp", .86);
+  return canvas.toDataURL("image/webp", 0.86);
 }

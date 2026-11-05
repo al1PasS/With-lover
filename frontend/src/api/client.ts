@@ -21,6 +21,13 @@ export async function request<T>(
       .catch(() => ({ message: "连接暂时失败，请稍后重试" }));
     throw new Error(data.message || `请求失败 (${response.status})`);
   }
+  if (
+    options.method &&
+    options.method !== "GET" &&
+    !path.startsWith("/activities") &&
+    !path.startsWith("/auth")
+  )
+    window.dispatchEvent(new Event("shiguang:activity-changed"));
   if (response.status === 204) return undefined as T;
   return response.json();
 }

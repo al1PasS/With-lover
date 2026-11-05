@@ -1,3 +1,5 @@
+import ProfileSettings from "./ProfileSettings";
+import { ActivityCenter, demoActivity } from "./Activity";
 import { couple, occurrence, anniversaryLabel, anniversaryDays } from "./profile";
 import {
   useEffect,
@@ -128,6 +130,10 @@ function demoPrivacy() {
   }
 }
 export default function App() {
+  const [loginHint, setLoginHint] = useState("");
+  const [loginUsername, setLoginUsername] = useState("");
+  const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(null);
+  const [activityHome, setActivityHome] = useState<HTMLDivElement | null>(null);
   const [memories, setMemories] = useState<Memory[]>(demo && sessionStorage.getItem("shiguang:demo-user") ? demoMemories : []),
     [anniversaries, setAnniversaries] = useState<Anniversary[]>(
       demo && sessionStorage.getItem("shiguang:demo-user") ? demoAnniversaries : [],
@@ -189,6 +195,28 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [notice]);
+  const location = useLocation();
+  useEffect(() => {
+    if (!user || pathname !== "/timeline") return;
+    const id = new URLSearchParams(location.search).get("activity");
+    if (!id) return;
+    let active = true;
+    if (demo) { const memory = memories.find(m => m.id === id && !m.deleted); if (memory) setSelected(memory); else setNotice("这段回忆已经删除或不存在"); }
+    else void request<Memory>(`/memories/${encodeURIComponent(id)}`).then(memory => { if (active) setSelected(memory); }).catch(e => { if (active) setNotice((e as Error).message); });
+    return () => { active = false; };
+  }, [location.key, user]);
+  useEffect(() => {
+    if (!user) return;
+    const id = new URLSearchParams(location.search).get("activity");
+    if (!id || pathname === "/timeline") return;
+    if (!demo && pathname === "/anniversaries") void request<Anniversary[]>("/anniversaries").then(setAnniversaries).catch(e => setNotice((e as Error).message));
+    if (!demo && pathname === "/places") void request<Place[]>("/places").then(setPlaces).catch(e => setNotice((e as Error).message));
+    const observer = new MutationObserver(() => focus());
+    let timer: ReturnType<typeof setTimeout>;
+    const focus = () => { const el = document.getElementById(`activity-${id}`); if (!el) return; el.scrollIntoView({ block: "center", behavior: "instant" }); el.classList.add("activity-focus"); observer.disconnect(); timer = setTimeout(() => el.classList.remove("activity-focus"), 3000); };
+    observer.observe(document.body, { childList: true, subtree: true }); focus();
+    return () => { observer.disconnect(); clearTimeout(timer); };
+  }, [location.key, user, pathname]);
   async function load() {
     const generation = ++loadGeneration.current;
     setLoaded(false);
@@ -337,7 +365,7 @@ export default function App() {
     try {
       const data = await imageFileToData(file, 2200);
       const raw = JSON.stringify(data);
-      if (demo) localStorage.setItem("shiguang:cover", raw);
+      if (demo) { localStorage.setItem("shiguang:cover", raw); demoActivity("cover", "cover", "updated", "首页封面", "更换了首页封面", "/"); }
       else await request("/settings/cover", { method: "PUT", body: JSON.stringify({ value: raw }) });
       setCoverImage(data);
       setNotice("新的封面已经换好啦");
@@ -378,6 +406,7 @@ export default function App() {
         await load();
       }
       setModal(null);
+      setLoginHint("");
     } catch (e) {
       setFormError((e as Error).message);
     } finally {
@@ -430,6 +459,7 @@ export default function App() {
             "/memories" + (editing ? "/" + editing.id : ""),
             { method: editing ? "PATCH" : "POST", body: JSON.stringify(m) },
           );
+      if (demo) demoActivity("memories", saved.id, editing ? "updated" : "created", saved.title, editing ? "修改了回忆" : "新增了回忆", `/timeline?activity=${saved.id}`);
       setMemories((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
       setModal(null);
       setNotice(m.published ? "这一刻，已经好好收藏" : "草稿已保存");
@@ -449,6 +479,7 @@ export default function App() {
       setMemories((prev) =>
         prev.map((x) => (x.id === m.id ? { ...x, deleted: !restore } : x)),
       );
+      if (demo) demoActivity("memories", m.id, restore ? "restored" : "deleted", m.title, restore ? "恢复了回忆" : "删除了回忆", `/timeline?activity=${m.id}`);
       setNotice(restore ? "回忆已恢复" : "已移入回收站，可在管理页恢复");
     } catch (e) {
       setNotice((e as Error).message);
@@ -492,6 +523,7 @@ export default function App() {
           : [...items, saved],
       );
       setModal(null);
+      if (demo) demoActivity("anniversaries", saved.id, editingAnniversary ? "updated" : "created", saved.title, editingAnniversary ? "修改了纪念日" : "新增了纪念日", `/anniversaries?activity=${saved.id}`);
       setNotice(editingAnniversary ? "纪念日已更新" : "又多了一个值得记住的日子");
     } catch (e) {
       setFormError((e as Error).message);
@@ -504,6 +536,7 @@ export default function App() {
     try {
       if (!demo) await request(`/anniversaries/${a.id}`, { method: "DELETE" });
       setAnniversaries((items) => items.filter((item) => item.id !== a.id));
+      if (demo) demoActivity("anniversaries", a.id, "deleted", a.title, "删除了纪念日", `/anniversaries?activity=${a.id}`);
       setNotice("纪念日已删除");
     } catch (e) {
       setNotice((e as Error).message);
@@ -537,13 +570,14 @@ export default function App() {
       const place = demo
         ? { id: editingPlace?.id || crypto.randomUUID(), ...input, visitDate: input.visitDate || undefined, sortOrder: editingPlace?.sortOrder ?? places.length }
         : await request<Place>(`/admin/places${editingPlace ? `/${editingPlace.id}` : ""}`, { method: editingPlace ? "PATCH" : "POST", body: JSON.stringify(input) });
+      if (demo) demoActivity("places", place.id, editingPlace ? "updated" : "created", place.city, editingPlace ? "修改了足迹" : "新增了足迹", `/places?activity=${place.id}`);
       setPlaces((items) => editingPlace ? items.map((item) => item.id === place.id ? place : item) : [...items, place]);
       setModal(null); setEditingPlace(null); setNotice(editingPlace ? "足迹已经更新" : "新的城市长卷已经放进足迹");
     } catch (e) { setFormError((e as Error).message); } finally { setBusy(false); }
   }
   async function deletePlace(place: Place) {
     if (!window.confirm(`确定删除“${place.city}”这条足迹吗？`)) return;
-    try { if (!demo) await request(`/admin/places/${place.id}`, { method: "DELETE" }); setPlaces((items) => items.filter((item) => item.id !== place.id)); setNotice("足迹已删除"); }
+    try { if (!demo) await request(`/admin/places/${place.id}`, { method: "DELETE" }); setPlaces((items) => items.filter((item) => item.id !== place.id)); if (demo) demoActivity("places", place.id, "deleted", place.city, "删除了足迹", `/places?activity=${place.id}`); setNotice("足迹已删除"); }
     catch (e) { setNotice((e as Error).message); }
   }
   async function movePlace(id: string, direction: -1 | 1) {
@@ -624,6 +658,7 @@ export default function App() {
           </div>
         </nav>
         <div className="header-actions">
+          {user && <div ref={setActivityTarget} className="activity-header-slot"/>}
           <button
             className="icon-button"
             onClick={() => setDark(!dark)}
@@ -659,6 +694,7 @@ export default function App() {
         </div>
       </header>
       <main>
+        <ActivityCenter user={user} home={pathname === "/"} headerTarget={activityTarget} homeTarget={activityHome}/>
         {error && (
           <div className="error" role="alert">
             {error}
@@ -741,6 +777,7 @@ export default function App() {
                     <span className="hand-note">little moments, big love.</span>
                   </div>
                 </section>
+                {user && <div ref={setActivityHome}/>}
                 <div className="intro-divider">
                   <Heart size={16} />
                   <span>两个人的小事，就是我们的全世界</span>
@@ -788,7 +825,7 @@ export default function App() {
                         .map((a) => {
                           const d = anniversaryDays(a);
                           return (
-                            <div className="anniversary-row" key={a.id}>
+                            <div className="anniversary-row" id={`activity-${a.id}`} key={a.id}>
                               <div>
                                 <strong>{a.title}</strong>
                                 <small>{anniversaryLabel(a)}</small>
@@ -890,7 +927,7 @@ export default function App() {
                 )}
                 <section className="place-stories">
                     {placesLoading ? <PlaceLoadingCards /> : places.map((place, index) => (
-                        <article className="custom-place" key={place.id}>
+                        <article className="custom-place" id={`activity-${place.id}`} key={place.id}>
                           {place.panoramaImage && <img className="place-panorama" src={place.panoramaImage} alt={`${place.city}的旅行长卷`} />}
                           {(place.visitDate || place.description) && <div className="place-caption"><span>{place.visitDate?.replaceAll("-", ".")}</span><p>{place.description}</p></div>}
                           {userRole === "ADMIN" && <div className="place-admin-actions" aria-label={`${place.city}的管理操作`}>
@@ -929,7 +966,7 @@ export default function App() {
                   {anniversariesLoading ? <AnniversaryLoadingCards /> : anniversaries.map((a, index) => {
                     const d = anniversaryDays(a);
                     return (
-                      <article className="anniversary-paper" key={a.id}>
+                      <article className="anniversary-paper" id={`activity-${a.id}`} key={a.id}>
                         <div className="anniv-head">
                           <span className="anniv-icon">
                             <CalendarBlank size={17} />
@@ -1010,6 +1047,10 @@ export default function App() {
                         ? "当前为演示管理，内容只保存在这个浏览器。"
                         : "双人共同维护；新记录默认私密。"}
                     </div>
+                    <ProfileSettings user={user} onSaved={async (nickname, loginRequired, username) => {
+                      if (loginRequired) { setLoginUsername(username); setLoginHint("个人信息已更新，请使用更新后的账号信息重新登录。"); await load(); setNotice("账号已更新，请使用新的登录信息重新登录"); setFormError(""); setModal("login"); }
+                      else { setUser(nickname); setNotice("个人信息已保存"); }
+                    }}/>
                     {userRole === "ADMIN" && (
                       <section className="privacy-panel" aria-labelledby="privacy-title">
                         <div className="privacy-panel-heading">
@@ -1155,7 +1196,7 @@ export default function App() {
               {modal === "login"
                 ? demo
                   ? "当前是示例空间，进入后可体验编辑。"
-                  : "只有你们两人可以登录，完整故事只对彼此可见。"
+                  : loginHint || "只有你们两人可以登录，完整故事只对彼此可见。"
                 : modal === "place"
                     ? "请上传已经制作完成的横向长卷，普通成员只能浏览。"
                 : "不必是大事，想记住的就值得。"}
@@ -1168,7 +1209,7 @@ export default function App() {
                     name="username"
                     required
                     autoComplete="username"
-                    defaultValue={demo ? couple.male : ""}
+                    defaultValue={demo ? couple.male : loginUsername}
                   />
                 </label>
                 {!demo && (

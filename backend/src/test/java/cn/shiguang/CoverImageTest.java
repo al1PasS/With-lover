@@ -17,6 +17,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Import(SecurityConfig.class)
 class CoverImageTest {
  @Autowired MockMvc mvc;
+ @MockitoBean ActivityService activity;
  @MockitoBean SiteSettingRepository settings;
  @MockitoBean PrivacyService privacy;
  @MockitoBean AccountRepository accounts;
