@@ -31,6 +31,7 @@ class ActivityService {
   case "anniversaries" -> "/anniversaries?activity="+encoded(id);
   case "places" -> "/places?activity="+encoded(id);
   case "garden" -> "/play";
+  case "music" -> "/admin?activity="+encoded(id);
   default -> "/";
  };}
  @Transactional(readOnly=true)

@@ -4,6 +4,894 @@
  */
 
 export interface paths {
+    "/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 登录成员可见的全部足迹元数据；不包含原图或 Base64。private, no-store。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 按顺序排列的轻量足迹 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"][];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 每次检查足迹访客可见设置；不包含图片正文，no-store。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 含公开图片 URL 的轻量足迹列表 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"][];
+                    };
+                };
+                /** @description 足迹未向访客开放 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 管理员新增足迹；要求 CSRF。图片必须为有效 JPEG、PNG 或 WebP data URL，比例 6–8:1。 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlaceInput"] & Record<string, never>;
+                };
+            };
+            responses: {
+                /** @description 新足迹元数据，不回传图片正文 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"];
+                    };
+                };
+                /** @description 内容或图片无效 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 仅管理员可写，或 CSRF 无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片处理繁忙，请稍后重试 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/places/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description 管理员删除足迹及派生图，要求 CSRF。 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 已删除 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 仅管理员可写，或 CSRF 无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 足迹已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        /** @description 管理员编辑，要求 CSRF。省略或 null 的 panoramaImage 保留旧图；空串或资源 URL 不可作为新图。文字编辑不改变图片版本。 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["PlaceInput"];
+                };
+            };
+            responses: {
+                /** @description 更新后的轻量足迹 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"];
+                    };
+                };
+                /** @description 内容或图片无效 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 仅管理员可写，或 CSRF 无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 足迹已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片处理繁忙，请稍后重试 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/admin/places/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description 管理员提交全部足迹 ID 的目标顺序，要求 CSRF；返回轻量元数据。 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 重排后的轻量足迹 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["Place"][];
+                    };
+                };
+                /** @description 足迹列表已变化，请刷新 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 仅管理员可写，或 CSRF 无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/media/places/{id}": {
+        parameters: {
+            query: {
+                /** @description 图片版本；旧版本不可读取新内容 */
+                v: string;
+                /** @description 目标宽度；不放大原图 */
+                w?: 960 | 1920 | 3200;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description 成员鉴权读取独立 JPEG 派生图，private, no-store；存量图片首次读取时受限生成，不将私图持久化到浏览器。 */
+        get: {
+            parameters: {
+                query: {
+                    /** @description 图片版本；旧版本不可读取新内容 */
+                    v: string;
+                    /** @description 目标宽度；不放大原图 */
+                    w?: 960 | 1920 | 3200;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description JPEG 图片 */
+                200: {
+                    headers: {
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                    };
+                };
+                /** @description 无效尺寸或版本参数 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片或版本不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 旧图片无法安全解码；原数据保留 */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片处理繁忙 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/media/places/{id}": {
+        parameters: {
+            query: {
+                v: string;
+                w?: 960 | 1920 | 3200;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description 每次先检查足迹公开设置、存在性和版本，再处理 ETag。仅成功图片可 private, no-cache；撤权和错误 no-store，不使用长期强缓存。 */
+        get: {
+            parameters: {
+                query: {
+                    v: string;
+                    w?: 960 | 1920 | 3200;
+                };
+                header?: {
+                    "If-None-Match"?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 允许公开的 JPEG 派生图 */
+                200: {
+                    headers: {
+                        ETag?: string;
+                        /** @description private, no-cache */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "image/jpeg": string;
+                    };
+                };
+                /** @description 权限和版本有效且图片未变化 */
+                304: {
+                    headers: {
+                        ETag?: string;
+                        /** @description private, no-cache */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 无效尺寸或版本参数 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 足迹未向访客开放；不返回 304 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片或版本不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 旧图片无法安全解码 */
+                422: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 图片处理繁忙 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/music": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 两位登录成员共享的私有曲库和全站选曲一致快照。不返回文件系统路径。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 曲库、当前歌曲及递增版本；声音开关不在此共享 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MusicSnapshot"];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/music/tracks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description 双方均可上传 MP3 或 PCM WAV；不自动改变当前背景音乐。要求 CSRF。 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "multipart/form-data": {
+                        /**
+                         * Format: binary
+                         * @description 最大 20 MiB，必须为有效的 MP3 或 PCM WAV
+                         */
+                        file: string;
+                        /** @description 可选显示名称；省略时使用文件名 */
+                        title?: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description 上传成功后的共享快照 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MusicSnapshot"];
+                    };
+                };
+                /** @description 文件或显示名称无效 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description CSRF 令牌无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 曲库数量或总容量达到上限 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 文件超过大小上限 */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 不支持的音频格式 */
+                415: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 同时上传过多，请稍后重试 */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/music/selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** @description 设置全站共享背景音乐；null 清空选择。重复选择无副作用。要求 CSRF。 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** Format: uuid */
+                        trackId: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description 设置成功后的共享快照 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MusicSnapshot"];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description CSRF 令牌无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲不存在或已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/music/tracks/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** @description 双方均可删除；当前歌曲被删除时同时清空选择。要求 CSRF。 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 删除成功后的共享快照 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["MusicSnapshot"];
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description CSRF 令牌无效 */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲不存在或已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/music/tracks/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 私有同源音频流；每次请求（包括 Range）校验会话，禁止缓存。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description HTTP 字节范围 */
+                    Range?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 完整音频 */
+                200: {
+                    headers: {
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        /** @description bytes */
+                        "Accept-Ranges"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": string;
+                        "audio/wav": string;
+                    };
+                };
+                /** @description 有效的字节范围 */
+                206: {
+                    headers: {
+                        "Content-Range"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": string;
+                        "audio/wav": string;
+                    };
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲不存在或已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 字节范围无效 */
+                416: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** @description 与 GET 相同的鉴权和音频元数据，无响应正文。 */
+        head: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 音频元数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 请先登录 */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲不存在或已删除 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
     "/account/profile": {
         parameters: {
             query?: never;
@@ -1037,6 +1925,79 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        PlaceImageVariant: {
+            /** @description 同源鉴权图片 URL */
+            url: string;
+            /** @description 文件真实宽度，不是目标档位 */
+            width: number;
+            height: number;
+        };
+        PlaceImage: {
+            /** @description 默认1920档预览 URL；包含 w 与 v 参数 */
+            url: string;
+            /**
+             * Format: uuid
+             * @description 仅换图时变化
+             */
+            version: string;
+            /** @description 源图宽；旧图尚未派生时为 null */
+            width: number | null;
+            /** @description 源图高；旧图尚未派生时为 null */
+            height: number | null;
+            /** @description 已知实际尺寸，不放大、不重复；旧图首次派生前为空 */
+            variants: components["schemas"]["PlaceImageVariant"][];
+        };
+        Place: {
+            /** Format: uuid */
+            id: string;
+            city: string;
+            /** Format: date */
+            visitDate: string | null;
+            description: string;
+            sortOrder: number;
+            image: components["schemas"]["PlaceImage"];
+        };
+        PlaceInput: {
+            city: string;
+            /** Format: date */
+            visitDate?: string | null;
+            description?: string;
+            /** @description 新建必填有效 data URL；编辑省略/null保留，空串拒绝；不接受资源URL */
+            panoramaImage?: string | null;
+        };
+        MusicTrack: {
+            /** Format: uuid */
+            id: string;
+            title: string;
+            /** @enum {string} */
+            contentType: "audio/mpeg" | "audio/wav";
+            /** Format: int64 */
+            byteSize: number;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        MusicLimits: {
+            /**
+             * Format: int64
+             * @default 20971520
+             */
+            maxFileBytes: number;
+            /** @default 20 */
+            maxTracks: number;
+            /**
+             * Format: int64
+             * @default 209715200
+             */
+            maxTotalBytes: number;
+        };
+        MusicSnapshot: {
+            tracks: components["schemas"]["MusicTrack"][];
+            /** Format: uuid */
+            selectedTrackId: string | null;
+            /** Format: int64 */
+            revision: number;
+            limits: components["schemas"]["MusicLimits"];
+        };
         AccountProfile: {
             id: number;
             username: string;

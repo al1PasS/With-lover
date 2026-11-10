@@ -60,7 +60,7 @@ test("mobile personal information supports username edits and stays inside viewp
   await expect(page.getByLabel("当前密码（修改用户名）", { exact: true })).toBeVisible();
   await page.getByLabel("当前密码（修改用户名）", { exact: true }).fill("current-test-only");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: "../e2e/screenshots/profile-mobile.png", fullPage: true, animations: "disabled" });
+  await page.screenshot({ path: test.info().outputPath("profile-mobile.png"), fullPage: true, animations: "disabled" });
   await page.getByRole("button", { name: "保存个人信息" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
 });

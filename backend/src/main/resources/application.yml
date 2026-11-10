@@ -31,6 +31,15 @@ server:
   error:
     include-message: never
     include-stacktrace: never
+shiguang:
+  media-root: ${MEDIA_ROOT:./media}
+  music:
+    max-file-bytes: ${MUSIC_MAX_FILE_BYTES:20971520}
+    max-tracks: ${MUSIC_MAX_TRACKS:20}
+    max-total-bytes: ${MUSIC_MAX_TOTAL_BYTES:209715200}
+    max-concurrent-uploads: ${MUSIC_MAX_CONCURRENT_UPLOADS:2}
+    orphan-grace: ${MUSIC_ORPHAN_GRACE:PT1H}
+    cleanup-interval: ${MUSIC_CLEANUP_INTERVAL:PT1H}
 ark:
   api-key: ${ARK_API_KEY:}
 management:

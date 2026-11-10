@@ -14,6 +14,9 @@ class Place {
  LocalDate visitDate;
  @Column(nullable=false,length=500) String description="";
  @Column(nullable=false) int sortOrder=0;
+ @Column(nullable=false) UUID imageRevision=UUID.randomUUID();
+ Integer imageWidth;
+ Integer imageHeight;
  Instant createdAt=Instant.now();
  protected Place(){}
 }

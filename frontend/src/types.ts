@@ -2,19 +2,23 @@ import type { components } from "./api/schema";
 export type Memory = Omit<components["schemas"]["PrivateMemory"], "deleted"> & {
   deleted?: boolean;
 };
-export type Anniversary = Omit<components["schemas"]["Anniversary"], "sortOrder"> & {
+export type Anniversary = Omit<
+  components["schemas"]["Anniversary"],
+  "sortOrder"
+> & {
   lunar?: { month: number; day: number };
   dateLabel?: string;
   sortOrder?: number;
 };
 
-export type Place = {
-  id: string;
-  city: string;
-  panoramaImage: string;
-  visitDate?: string;
-  description: string;
-  sortOrder: number;
+export type PlaceImage = components["schemas"]["PlaceImage"];
+export type Place = Omit<
+  components["schemas"]["Place"],
+  "image" | "visitDate"
+> & {
+  image?: PlaceImage | null;
+  panoramaImage?: string; // Demo images never use the real media endpoints.
+  visitDate?: string | null;
 };
 
 export type PrivacyPolicy = {

@@ -43,13 +43,13 @@ test("mobile inbox handles deleted targets and remains inside the viewport", asy
   await page.getByRole("button", { name: "最近更新，1 条未读" }).click();
   await expect(page.getByRole("dialog")).toContainText("内容已删除");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await page.screenshot({ path: "../e2e/screenshots/activity-mobile.png", animations: "disabled" });
+  await page.screenshot({ path: test.info().outputPath("activity-mobile.png"), animations: "disabled" });
   await page.getByRole("button", { name: "全部已读", exact: true }).click();
   await expect(page.getByRole("dialog").locator("footer")).toContainText("更新都收在这里了");
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "切换深色" }).click();
   await page.getByRole("button", { name: "最近更新，0 条未读" }).click();
-  await page.screenshot({ path: "../e2e/screenshots/activity-mobile-dark.png", animations: "disabled" });
+  await page.screenshot({ path: test.info().outputPath("activity-mobile-dark.png"), animations: "disabled" });
   await page.setViewportSize({ width: 812, height: 375 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });

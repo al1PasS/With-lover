@@ -25,7 +25,13 @@ const labels: Record<string, string> = {
   places: "足迹",
   cover: "首页",
   garden: "一起玩",
+  music: "背景音乐",
 };
+let demoMusicActivities: Activity[] = [];
+export function clearDemoMusicActivities() {
+  demoMusicActivities = [];
+  if (demo) activityChanged();
+}
 export const activityChanged = () =>
   window.dispatchEvent(new Event("shiguang:activity-changed"));
 export function demoActivity(
@@ -54,15 +60,28 @@ export function demoActivity(
     read: false,
     deleted: false,
   });
-  localStorage.setItem("shiguang:activities", JSON.stringify(rows));
+  if (module === "music") demoMusicActivities.unshift(rows[0]);
+  else
+    localStorage.setItem(
+      "shiguang:activities",
+      JSON.stringify(rows.filter((row) => row.module !== "music")),
+    );
   activityChanged();
 }
 function demoRows(): Activity[] {
+  let saved: Activity[] = [];
   try {
-    return JSON.parse(localStorage.getItem("shiguang:activities") || "[]");
+    const value = JSON.parse(
+      localStorage.getItem("shiguang:activities") || "[]",
+    );
+    if (Array.isArray(value)) saved = value;
   } catch {
-    return [];
+    /* A damaged demo history must not hide tab-memory music events. */
   }
+  return [
+    ...demoMusicActivities,
+    ...saved.filter((row) => row.module !== "music"),
+  ].sort((a, b) => b.id - a.id);
 }
 function demoRead(user: string): number[] {
   try {
@@ -147,8 +166,13 @@ export function demoSettingActivity(
         removed = (old.photos || []).filter(
           (p) => !x.photos?.some((y) => y.id === p.id),
         ).length;
-      if (added) { summary = `添加了 ${added} 张照片`; const photo = x.photos?.find(p => !old.photos?.some(y => y.id === p.id)); if (photo) destination += `?activity=${encodeURIComponent(photo.id)}`; }
-      else if (removed) summary = `移除了 ${removed} 张照片`;
+      if (added) {
+        summary = `添加了 ${added} 张照片`;
+        const photo = x.photos?.find(
+          (p) => !old.photos?.some((y) => y.id === p.id),
+        );
+        if (photo) destination += `?activity=${encodeURIComponent(photo.id)}`;
+      } else if (removed) summary = `移除了 ${removed} 张照片`;
     }
     demoActivity(
       key,

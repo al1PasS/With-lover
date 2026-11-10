@@ -1,6 +1,13 @@
 import ProfileSettings from "./ProfileSettings";
+import { PlaceCard } from "./Places";
+import { MusicPanel, MusicToggle, useBackgroundMusic } from "./Music";
 import { ActivityCenter, demoActivity } from "./Activity";
-import { couple, occurrence, anniversaryLabel, anniversaryDays } from "./profile";
+import {
+  couple,
+  occurrence,
+  anniversaryLabel,
+  anniversaryDays,
+} from "./profile";
 import {
   useEffect,
   useRef,
@@ -57,7 +64,13 @@ import {
   type Place,
   type PrivacyPolicy,
 } from "./types";
-import { AlbumsPage, PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
+import {
+  AlbumsPage,
+  PlayPage,
+  RecordsPage,
+  VisitorGate,
+  WishesPage,
+} from "./LittleWorld";
 import { imageFileToData } from "./sharedState";
 const nav = [
   ["/", "首页", House],
@@ -78,36 +91,64 @@ function LoadingBlock({ className = "" }: { className?: string }) {
   return <span className={`loading-block ${className}`} aria-hidden="true" />;
 }
 function MemoryLoadingCards({ count }: { count: number }) {
-  return <>{Array.from({ length: count }, (_, index) => (
-    <article className="memory-card loading-card" key={index} aria-hidden="true">
-      <LoadingBlock className="loading-photo" />
-      <div className="memory-copy">
-        <LoadingBlock className="loading-line short" />
-        <LoadingBlock className="loading-line title" />
-        <LoadingBlock className="loading-line" />
-        <LoadingBlock className="loading-line medium" />
-      </div>
-    </article>
-  ))}</>;
+  return (
+    <>
+      {Array.from({ length: count }, (_, index) => (
+        <article
+          className="memory-card loading-card"
+          key={index}
+          aria-hidden="true"
+        >
+          <LoadingBlock className="loading-photo" />
+          <div className="memory-copy">
+            <LoadingBlock className="loading-line short" />
+            <LoadingBlock className="loading-line title" />
+            <LoadingBlock className="loading-line" />
+            <LoadingBlock className="loading-line medium" />
+          </div>
+        </article>
+      ))}
+    </>
+  );
 }
 function AnniversaryLoadingRows() {
-  return <div className="anniversary-loading" role="status" aria-label="纪念日加载中">
-    {Array.from({ length: 3 }, (_, index) => <LoadingBlock className="loading-anniversary-row" key={index} />)}
-  </div>;
+  return (
+    <div
+      className="anniversary-loading"
+      role="status"
+      aria-label="纪念日加载中"
+    >
+      {Array.from({ length: 3 }, (_, index) => (
+        <LoadingBlock className="loading-anniversary-row" key={index} />
+      ))}
+    </div>
+  );
 }
 function PlaceLoadingCards() {
-  return <div className="place-loading" role="status" aria-label="足迹加载中">
-    {Array.from({ length: 3 }, (_, index) => <LoadingBlock className="loading-place" key={index} />)}
-  </div>;
+  return (
+    <div className="place-loading" role="status" aria-label="足迹加载中">
+      {Array.from({ length: 3 }, (_, index) => (
+        <LoadingBlock className="loading-place" key={index} />
+      ))}
+    </div>
+  );
 }
 function AnniversaryLoadingCards() {
-  return <>{Array.from({ length: 3 }, (_, index) => (
-    <article className="anniversary-paper loading-anniversary-card" key={index} aria-hidden="true">
-      <LoadingBlock className="loading-line medium" />
-      <LoadingBlock className="loading-line" />
-      <LoadingBlock className="loading-number" />
-    </article>
-  ))}</>;
+  return (
+    <>
+      {Array.from({ length: 3 }, (_, index) => (
+        <article
+          className="anniversary-paper loading-anniversary-card"
+          key={index}
+          aria-hidden="true"
+        >
+          <LoadingBlock className="loading-line medium" />
+          <LoadingBlock className="loading-line" />
+          <LoadingBlock className="loading-number" />
+        </article>
+      ))}
+    </>
+  );
 }
 function decodeCover(raw: string | null | undefined) {
   if (!raw) return bundledCover;
@@ -132,19 +173,30 @@ function demoPrivacy() {
 export default function App() {
   const [loginHint, setLoginHint] = useState("");
   const [loginUsername, setLoginUsername] = useState("");
-  const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(null);
+  const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
   const [activityHome, setActivityHome] = useState<HTMLDivElement | null>(null);
-  const [memories, setMemories] = useState<Memory[]>(demo && sessionStorage.getItem("shiguang:demo-user") ? demoMemories : []),
-    [anniversaries, setAnniversaries] = useState<Anniversary[]>(
-      demo && sessionStorage.getItem("shiguang:demo-user") ? demoAnniversaries : [],
+  const [memories, setMemories] = useState<Memory[]>(
+      demo && sessionStorage.getItem("shiguang:demo-user") ? demoMemories : [],
     ),
-    [user, setUser] = useState<string | null>(() => demo ? sessionStorage.getItem("shiguang:demo-user") : null),
-    [userRole, setUserRole] = useState<string | null>(() => demo && sessionStorage.getItem("shiguang:demo-user") ? "ADMIN" : null),
+    [anniversaries, setAnniversaries] = useState<Anniversary[]>(
+      demo && sessionStorage.getItem("shiguang:demo-user")
+        ? demoAnniversaries
+        : [],
+    ),
+    [user, setUser] = useState<string | null>(() =>
+      demo ? sessionStorage.getItem("shiguang:demo-user") : null,
+    ),
+    [userRole, setUserRole] = useState<string | null>(() =>
+      demo && sessionStorage.getItem("shiguang:demo-user") ? "ADMIN" : null,
+    ),
     [loaded, setLoaded] = useState(demo),
     [memoriesLoading, setMemoriesLoading] = useState(false),
     [anniversariesLoading, setAnniversariesLoading] = useState(false),
     [placesLoading, setPlacesLoading] = useState(false),
-    [placesLoaded, setPlacesLoaded] = useState(demo),
+    [placesError, setPlacesError] = useState(""),
+    [resourceRetry, setResourceRetry] = useState(0),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [modal, setModal] = useState<
@@ -152,8 +204,9 @@ export default function App() {
     >(null),
     [selected, setSelected] = useState<Memory | null>(null),
     [editing, setEditing] = useState<Memory | null>(null),
-    [editingAnniversary, setEditingAnniversary] =
-      useState<Anniversary | null>(null),
+    [editingAnniversary, setEditingAnniversary] = useState<Anniversary | null>(
+      null,
+    ),
     [anniversaryLunar, setAnniversaryLunar] = useState(false),
     [places, setPlaces] = useState<Place[]>([]),
     [editingPlace, setEditingPlace] = useState<Place | null>(null),
@@ -163,10 +216,78 @@ export default function App() {
     [coverBusy, setCoverBusy] = useState(false),
     [busy, setBusy] = useState(false),
     [formError, setFormError] = useState("");
-  const [privacy, setPrivacy] = useState<PrivacyPolicy>(() => demo ? demoPrivacy() : defaultPrivacy);
-  const [privacyDraft, setPrivacyDraft] = useState<PrivacyPolicy>(() => demo ? demoPrivacy() : defaultPrivacy);
+  const [privacy, setPrivacy] = useState<PrivacyPolicy>(() =>
+    demo ? demoPrivacy() : defaultPrivacy,
+  );
+  const [privacyDraft, setPrivacyDraft] = useState<PrivacyPolicy>(() =>
+    demo ? demoPrivacy() : defaultPrivacy,
+  );
   const [privacyBusy, setPrivacyBusy] = useState(false);
+  const music = useBackgroundMusic(user);
   const loadGeneration = useRef(0);
+  type Resource = "memories" | "trash" | "anniversaries" | "places";
+  const resourceLoads = useRef(new Map<Resource, AbortController>());
+  const readyResources = useRef(new Set<Resource>());
+  const failedResources = useRef(new Set<Resource>());
+  const activityResourceKey = useRef("");
+  const placeSelection = useRef(0);
+  const [placeImageBusy, setPlaceImageBusy] = useState(false);
+  function cancelResource(resource: Resource, keepReady = false) {
+    resourceLoads.current.get(resource)?.abort();
+    resourceLoads.current.delete(resource);
+    failedResources.current.delete(resource);
+    if (keepReady) readyResources.current.add(resource);
+    else readyResources.current.delete(resource);
+    setMemoriesLoading(
+      resourceLoads.current.has("memories") ||
+        resourceLoads.current.has("trash"),
+    );
+    setAnniversariesLoading(resourceLoads.current.has("anniversaries"));
+    setPlacesLoading(resourceLoads.current.has("places"));
+  }
+  function resetResources() {
+    for (const controller of resourceLoads.current.values()) controller.abort();
+    resourceLoads.current.clear();
+    readyResources.current.clear();
+    failedResources.current.clear();
+    activityResourceKey.current = "";
+    ++placeSelection.current;
+    setPlaceImageBusy(false);
+    setBusy(false);
+    setPlacesError("");
+  }
+  useEffect(
+    () => () => {
+      for (const controller of resourceLoads.current.values())
+        controller.abort();
+    },
+    [],
+  );
+  useEffect(() => {
+    const expired = () => {
+      ++loadGeneration.current;
+      resetResources();
+      setMemoriesLoading(false);
+      setAnniversariesLoading(false);
+      setPlacesLoading(false);
+      setModal(null);
+      setEditingPlace(null);
+      setPlaceImage("");
+      resetCsrf();
+      setUser(null);
+      setUserRole(null);
+      setMemories([]);
+      setAnniversaries([]);
+      setPlaces([]);
+      setSelected(null);
+      setCoverImage("");
+      setPrivacy(defaultPrivacy);
+      setLoaded(true);
+      setNotice("登录已过期，请重新登录");
+    };
+    window.addEventListener("shiguang:auth-expired", expired);
+    return () => window.removeEventListener("shiguang:auth-expired", expired);
+  }, []);
   const [dark, setDark] = useState(
     () => matchMedia("(prefers-color-scheme: dark)").matches,
   );
@@ -188,6 +309,8 @@ export default function App() {
   useEffect(() => {
     setSelected(null);
     setError("");
+    setPlacesError("");
+    failedResources.current.clear();
   }, [pathname]);
   useEffect(() => {
     if (notice) {
@@ -201,31 +324,62 @@ export default function App() {
     const id = new URLSearchParams(location.search).get("activity");
     if (!id) return;
     let active = true;
-    if (demo) { const memory = memories.find(m => m.id === id && !m.deleted); if (memory) setSelected(memory); else setNotice("这段回忆已经删除或不存在"); }
-    else void request<Memory>(`/memories/${encodeURIComponent(id)}`).then(memory => { if (active) setSelected(memory); }).catch(e => { if (active) setNotice((e as Error).message); });
-    return () => { active = false; };
+    if (demo) {
+      const memory = memories.find((m) => m.id === id && !m.deleted);
+      if (memory) setSelected(memory);
+      else setNotice("这段回忆已经删除或不存在");
+    } else
+      void request<Memory>(`/memories/${encodeURIComponent(id)}`)
+        .then((memory) => {
+          if (active) setSelected(memory);
+        })
+        .catch((e) => {
+          if (active) setNotice((e as Error).message);
+        });
+    return () => {
+      active = false;
+    };
   }, [location.key, user]);
   useEffect(() => {
     if (!user) return;
     const id = new URLSearchParams(location.search).get("activity");
     if (!id || pathname === "/timeline") return;
-    if (!demo && pathname === "/anniversaries") void request<Anniversary[]>("/anniversaries").then(setAnniversaries).catch(e => setNotice((e as Error).message));
-    if (!demo && pathname === "/places") void request<Place[]>("/places").then(setPlaces).catch(e => setNotice((e as Error).message));
+    if (
+      !demo &&
+      ((pathname === "/places" &&
+        (!readyResources.current.has("places") || placesLoading)) ||
+        (pathname === "/anniversaries" &&
+          (!readyResources.current.has("anniversaries") ||
+            anniversariesLoading)))
+    )
+      return;
+    // The route loader also handles activity links; do not fetch the list twice.
     const observer = new MutationObserver(() => focus());
     let timer: ReturnType<typeof setTimeout>;
-    const focus = () => { const el = document.getElementById(`activity-${id}`); if (!el) return; el.scrollIntoView({ block: "center", behavior: "instant" }); el.classList.add("activity-focus"); observer.disconnect(); timer = setTimeout(() => el.classList.remove("activity-focus"), 3000); };
-    observer.observe(document.body, { childList: true, subtree: true }); focus();
-    return () => { observer.disconnect(); clearTimeout(timer); };
-  }, [location.key, user, pathname]);
+    const focus = () => {
+      const el = document.getElementById(`activity-${id}`);
+      if (!el) return;
+      el.scrollIntoView({ block: "center", behavior: "instant" });
+      el.classList.add("activity-focus");
+      observer.disconnect();
+      timer = setTimeout(() => el.classList.remove("activity-focus"), 3000);
+    };
+    observer.observe(document.body, { childList: true, subtree: true });
+    focus();
+    return () => {
+      observer.disconnect();
+      clearTimeout(timer);
+    };
+  }, [location.key, user, pathname, placesLoading, anniversariesLoading]);
   async function load() {
     const generation = ++loadGeneration.current;
+    resetResources();
     setLoaded(false);
     setCoverImage("");
     setError("");
-    setMemoriesLoading(true);
-    setAnniversariesLoading(true);
+    setMemoriesLoading(false);
+    setAnniversariesLoading(false);
     setPlacesLoading(false);
-    setPlacesLoaded(false);
     setPlaces([]);
     try {
       const [me, policy] = await Promise.all([
@@ -244,28 +398,6 @@ export default function App() {
       if (signedIn || visitorCanView(policy, "home")) {
         setCoverImage(`/api/v1${prefix}/media/cover`);
       }
-
-      void Promise.all([
-        signedIn || visitorCanView(policy, "timeline") ? request<Memory[]>(prefix + "/memories") : Promise.resolve([]),
-        signedIn ? request<Memory[]>("/trash") : Promise.resolve([]),
-      ]).then(([rows, trash]) => {
-        if (generation === loadGeneration.current) setMemories([...rows, ...trash]);
-      }).catch((e) => {
-        if (generation === loadGeneration.current) setError((e as Error).message);
-      }).finally(() => {
-        if (generation === loadGeneration.current) setMemoriesLoading(false);
-      });
-
-      void (signedIn || visitorCanView(policy, "anniversaries")
-        ? request<Anniversary[]>(prefix + "/anniversaries")
-        : Promise.resolve([]))
-        .then((rows) => {
-          if (generation === loadGeneration.current) setAnniversaries(rows);
-        }).catch((e) => {
-          if (generation === loadGeneration.current) setError((e as Error).message);
-        }).finally(() => {
-          if (generation === loadGeneration.current) setAnniversariesLoading(false);
-        });
     } catch (e) {
       if (generation === loadGeneration.current) {
         setError((e as Error).message);
@@ -280,34 +412,123 @@ export default function App() {
     if (!demo) void load();
   }, []);
   useEffect(() => {
-    if (demo || !loaded || pathname !== "/places" || placesLoaded || placesLoading) return;
-    if (!user && !visitorCanView(privacy, "places")) {
-      setPlacesLoaded(true);
-      return;
+    if (demo || !loaded) return;
+    const wanted = new Set<Resource>();
+    const prefix = user ? "" : "/public";
+    if (
+      ["/", "/timeline", "/admin"].includes(pathname) &&
+      (user || visitorCanView(privacy, "timeline"))
+    )
+      wanted.add("memories");
+    if (pathname === "/admin" && user) wanted.add("trash");
+    if (
+      ["/", "/anniversaries"].includes(pathname) &&
+      (user || visitorCanView(privacy, "anniversaries"))
+    )
+      wanted.add("anniversaries");
+    if (pathname === "/places" && (user || visitorCanView(privacy, "places")))
+      wanted.add("places");
+    const activity = new URLSearchParams(location.search).get("activity");
+    const activityKey = activity
+      ? `${location.key}:${pathname}:${activity}`
+      : "";
+    if (activityKey && activityResourceKey.current !== activityKey) {
+      if (wanted.has("places")) cancelResource("places");
+      if (wanted.has("anniversaries")) cancelResource("anniversaries");
+    }
+    activityResourceKey.current = activityKey;
+    for (const resource of resourceLoads.current.keys()) {
+      if (!wanted.has(resource)) cancelResource(resource);
     }
     const generation = loadGeneration.current;
-    setPlacesLoading(true);
-    const prefix = user ? "" : "/public";
-    void request<Place[]>(prefix + "/places")
-      .then((rows) => {
-        if (generation === loadGeneration.current) setPlaces(rows);
+    const current = (resource: Resource, controller: AbortController) =>
+      generation === loadGeneration.current &&
+      resourceLoads.current.get(resource) === controller;
+    for (const resource of wanted) {
+      if (
+        readyResources.current.has(resource) ||
+        failedResources.current.has(resource) ||
+        resourceLoads.current.has(resource)
+      )
+        continue;
+      const controller = new AbortController();
+      resourceLoads.current.set(resource, controller);
+      const path = resource === "trash" ? "/trash" : `${prefix}/${resource}`;
+      void request<Memory[] | Anniversary[] | Place[]>(path, {
+        signal: controller.signal,
       })
-      .catch((e) => {
-        if (generation === loadGeneration.current) setError((e as Error).message);
-      })
-      .finally(() => {
-        if (generation === loadGeneration.current) {
-          setPlacesLoading(false);
-          setPlacesLoaded(true);
-        }
-      });
-  }, [loaded, pathname, placesLoaded, placesLoading, privacy, user]);
+        .then((rows) => {
+          if (!current(resource, controller)) return;
+          readyResources.current.add(resource);
+          if (resource === "places") {
+            setPlaces(rows as Place[]);
+            setPlacesError("");
+          } else if (resource === "anniversaries")
+            setAnniversaries(rows as Anniversary[]);
+          else
+            setMemories((previous) =>
+              resource === "trash"
+                ? [
+                    ...previous.filter((item) => !item.deleted),
+                    ...(rows as Memory[]),
+                  ]
+                : [
+                    ...(rows as Memory[]),
+                    ...previous.filter(
+                      (item) =>
+                        item.deleted &&
+                        !(rows as Memory[]).some((row) => row.id === item.id),
+                    ),
+                  ],
+            );
+        })
+        .catch((e) => {
+          if (!current(resource, controller) || controller.signal.aborted)
+            return;
+          failedResources.current.add(resource);
+          if (resource === "places") setPlacesError((e as Error).message);
+          else setError((e as Error).message);
+        })
+        .finally(() => {
+          if (!current(resource, controller)) return;
+          resourceLoads.current.delete(resource);
+          updateLoading();
+        });
+    }
+    function updateLoading() {
+      setMemoriesLoading(
+        resourceLoads.current.has("memories") ||
+          resourceLoads.current.has("trash"),
+      );
+      setAnniversariesLoading(resourceLoads.current.has("anniversaries"));
+      setPlacesLoading(resourceLoads.current.has("places"));
+    }
+    updateLoading();
+  }, [loaded, pathname, privacy, user, location.key, resourceRetry]);
+  function invalidateResources(...resources: Resource[]) {
+    for (const resource of resources) cancelResource(resource);
+    setResourceRetry((value) => value + 1);
+  }
+  function retryResources() {
+    failedResources.current.clear();
+    setError("");
+    setPlacesError("");
+    setResourceRetry((value) => value + 1);
+  }
   async function savePrivacy() {
     setPrivacyBusy(true);
     try {
-      const normalized = privacyDraft.mode === "PRIVATE"
-        ? { ...privacyDraft, home: false, timeline: false, anniversaries: false, albums: false, places: false }
-        : privacyDraft;
+      const normalized =
+        privacyDraft.mode === "PRIVATE"
+          ? {
+              ...privacyDraft,
+              home: false,
+              timeline: false,
+              anniversaries: false,
+              albums: false,
+              places: false,
+            }
+          : privacyDraft;
       const saved = demo
         ? normalized
         : await request<PrivacyPolicy>("/admin/privacy", {
@@ -317,7 +538,11 @@ export default function App() {
       if (demo) localStorage.setItem("shiguang:privacy", JSON.stringify(saved));
       setPrivacy(saved);
       setPrivacyDraft(saved);
-      setNotice(saved.mode === "PRIVATE" ? "访客入口已经轻轻合上" : "访客可见范围已经更新");
+      setNotice(
+        saved.mode === "PRIVATE"
+          ? "访客入口已经轻轻合上"
+          : "访客可见范围已经更新",
+      );
     } catch (e) {
       setNotice((e as Error).message);
     } finally {
@@ -348,15 +573,29 @@ export default function App() {
   }
   async function choosePlaceImage(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !file.type.startsWith("image/")) return setFormError("请选择长卷图片");
+    if (!file) return;
+    const selection = ++placeSelection.current;
+    setPlaceImageBusy(true);
     try {
+      if (!file.type.startsWith("image/")) throw new Error("请选择长卷图片");
+      if (file.size > 12 * 1024 * 1024)
+        throw new Error("原图请控制在 12MB 以内");
       const bitmap = await createImageBitmap(file);
       const ratio = bitmap.width / bitmap.height;
       bitmap.close();
-      if (ratio < 6 || ratio > 8) return setFormError("长卷比例需要在 6:1 至 8:1 之间，推荐使用 7:1");
-      setPlaceImage(await imageFileToData(file, 3200));
+      if (ratio < 6 || ratio > 8)
+        throw new Error("长卷比例需要在 6:1 至 8:1 之间，推荐使用 7:1");
+      const data = await imageFileToData(file, 3200);
+      if (selection !== placeSelection.current) return;
+      setPlaceImage(data);
       setFormError("");
-    } catch (error) { setFormError((error as Error).message || "长卷读取失败，请换一张再试"); }
+    } catch (error) {
+      if (selection === placeSelection.current)
+        setFormError((error as Error).message || "长卷读取失败，请换一张再试");
+    } finally {
+      if (selection === placeSelection.current) setPlaceImageBusy(false);
+      e.target.value = "";
+    }
   }
   async function chooseCover(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -365,8 +604,21 @@ export default function App() {
     try {
       const data = await imageFileToData(file, 2200);
       const raw = JSON.stringify(data);
-      if (demo) { localStorage.setItem("shiguang:cover", raw); demoActivity("cover", "cover", "updated", "首页封面", "更换了首页封面", "/"); }
-      else await request("/settings/cover", { method: "PUT", body: JSON.stringify({ value: raw }) });
+      if (demo) {
+        localStorage.setItem("shiguang:cover", raw);
+        demoActivity(
+          "cover",
+          "cover",
+          "updated",
+          "首页封面",
+          "更换了首页封面",
+          "/",
+        );
+      } else
+        await request("/settings/cover", {
+          method: "PUT",
+          body: JSON.stringify({ value: raw }),
+        });
       setCoverImage(data);
       setNotice("新的封面已经换好啦");
     } catch (e) {
@@ -376,7 +628,14 @@ export default function App() {
       e.target.value = "";
     }
   }
-  function openPlace(place: Place | null = null) { setEditingPlace(place); setPlaceImage(place?.panoramaImage || ""); setFormError(""); setModal(userRole === "ADMIN" ? "place" : "login"); }
+  function openPlace(place: Place | null = null) {
+    ++placeSelection.current;
+    setPlaceImageBusy(false);
+    setEditingPlace(place);
+    setPlaceImage("");
+    setFormError("");
+    setModal(userRole === "ADMIN" ? "place" : "login");
+  }
   function openAnniversary(a: Anniversary | null = null) {
     setEditingAnniversary(a);
     setAnniversaryLunar(Boolean(a?.lunar));
@@ -416,6 +675,12 @@ export default function App() {
   async function logout() {
     try {
       if (!demo) await request("/auth/logout", { method: "POST" });
+      music.stop();
+      ++loadGeneration.current;
+      resetResources();
+      setModal(null);
+      setEditingPlace(null);
+      setPlaceImage("");
       resetCsrf();
       setUser(null);
       setUserRole(null);
@@ -459,7 +724,16 @@ export default function App() {
             "/memories" + (editing ? "/" + editing.id : ""),
             { method: editing ? "PATCH" : "POST", body: JSON.stringify(m) },
           );
-      if (demo) demoActivity("memories", saved.id, editing ? "updated" : "created", saved.title, editing ? "修改了回忆" : "新增了回忆", `/timeline?activity=${saved.id}`);
+      if (demo)
+        demoActivity(
+          "memories",
+          saved.id,
+          editing ? "updated" : "created",
+          saved.title,
+          editing ? "修改了回忆" : "新增了回忆",
+          `/timeline?activity=${saved.id}`,
+        );
+      if (!demo) invalidateResources("memories", "trash");
       setMemories((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
       setModal(null);
       setNotice(m.published ? "这一刻，已经好好收藏" : "草稿已保存");
@@ -476,10 +750,19 @@ export default function App() {
           restore ? "/trash/" + m.id + "/restore" : "/memories/" + m.id,
           { method: restore ? "POST" : "DELETE" },
         );
+      if (!demo) invalidateResources("memories", "trash");
       setMemories((prev) =>
         prev.map((x) => (x.id === m.id ? { ...x, deleted: !restore } : x)),
       );
-      if (demo) demoActivity("memories", m.id, restore ? "restored" : "deleted", m.title, restore ? "恢复了回忆" : "删除了回忆", `/timeline?activity=${m.id}`);
+      if (demo)
+        demoActivity(
+          "memories",
+          m.id,
+          restore ? "restored" : "deleted",
+          m.title,
+          restore ? "恢复了回忆" : "删除了回忆",
+          `/timeline?activity=${m.id}`,
+        );
       setNotice(restore ? "回忆已恢复" : "已移入回收站，可在管理页恢复");
     } catch (e) {
       setNotice((e as Error).message);
@@ -498,7 +781,9 @@ export default function App() {
     const item: Anniversary = {
       id: editingAnniversary?.id || crypto.randomUUID(),
       title: String(f.get("title")),
-      date: lunar ? nextLunarBirthday(lunar.month, lunar.day) : String(f.get("date")),
+      date: lunar
+        ? nextLunarBirthday(lunar.month, lunar.day)
+        : String(f.get("date")),
       annual: Boolean(lunar) || f.get("annual") === "on",
       lunar,
       dateLabel: lunar ? `农历${lunarMonth}月${lunarDay}日` : undefined,
@@ -517,14 +802,25 @@ export default function App() {
               body: JSON.stringify(payload),
             },
           );
+      if (!demo) cancelResource("anniversaries", true);
       setAnniversaries((items) =>
         editingAnniversary
           ? items.map((a) => (a.id === saved.id ? saved : a))
           : [...items, saved],
       );
       setModal(null);
-      if (demo) demoActivity("anniversaries", saved.id, editingAnniversary ? "updated" : "created", saved.title, editingAnniversary ? "修改了纪念日" : "新增了纪念日", `/anniversaries?activity=${saved.id}`);
-      setNotice(editingAnniversary ? "纪念日已更新" : "又多了一个值得记住的日子");
+      if (demo)
+        demoActivity(
+          "anniversaries",
+          saved.id,
+          editingAnniversary ? "updated" : "created",
+          saved.title,
+          editingAnniversary ? "修改了纪念日" : "新增了纪念日",
+          `/anniversaries?activity=${saved.id}`,
+        );
+      setNotice(
+        editingAnniversary ? "纪念日已更新" : "又多了一个值得记住的日子",
+      );
     } catch (e) {
       setFormError((e as Error).message);
     } finally {
@@ -534,9 +830,20 @@ export default function App() {
   async function deleteAnniversary(a: Anniversary) {
     if (!window.confirm(`确定删除“${a.title}”吗？`)) return;
     try {
-      if (!demo) await request(`/anniversaries/${a.id}`, { method: "DELETE" });
+      if (!demo) {
+        await request(`/anniversaries/${a.id}`, { method: "DELETE" });
+        cancelResource("anniversaries", true);
+      }
       setAnniversaries((items) => items.filter((item) => item.id !== a.id));
-      if (demo) demoActivity("anniversaries", a.id, "deleted", a.title, "删除了纪念日", `/anniversaries?activity=${a.id}`);
+      if (demo)
+        demoActivity(
+          "anniversaries",
+          a.id,
+          "deleted",
+          a.title,
+          "删除了纪念日",
+          `/anniversaries?activity=${a.id}`,
+        );
       setNotice("纪念日已删除");
     } catch (e) {
       setNotice((e as Error).message);
@@ -545,9 +852,13 @@ export default function App() {
   async function moveAnniversary(id: string, direction: -1 | 1) {
     const currentIndex = anniversaries.findIndex((a) => a.id === id);
     const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= anniversaries.length) return;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= anniversaries.length)
+      return;
     const next = [...anniversaries];
-    [next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
+    [next[currentIndex], next[nextIndex]] = [
+      next[nextIndex],
+      next[currentIndex],
+    ];
     setAnniversaries(next);
     try {
       if (!demo)
@@ -563,29 +874,110 @@ export default function App() {
   async function savePlace(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
-    if (!placeImage) return setFormError("请先上传生成好的城市长卷");
+    if (placeImageBusy) return;
+    if (!editingPlace && !placeImage)
+      return setFormError("请先上传生成好的城市长卷");
+    const generation = loadGeneration.current;
     setBusy(true);
     try {
-      const input = { city: String(f.get("city")), panoramaImage: placeImage, visitDate: String(f.get("visitDate")) || null, description: String(f.get("description")) };
-      const place = demo
-        ? { id: editingPlace?.id || crypto.randomUUID(), ...input, visitDate: input.visitDate || undefined, sortOrder: editingPlace?.sortOrder ?? places.length }
-        : await request<Place>(`/admin/places${editingPlace ? `/${editingPlace.id}` : ""}`, { method: editingPlace ? "PATCH" : "POST", body: JSON.stringify(input) });
-      if (demo) demoActivity("places", place.id, editingPlace ? "updated" : "created", place.city, editingPlace ? "修改了足迹" : "新增了足迹", `/places?activity=${place.id}`);
-      setPlaces((items) => editingPlace ? items.map((item) => item.id === place.id ? place : item) : [...items, place]);
-      setModal(null); setEditingPlace(null); setNotice(editingPlace ? "足迹已经更新" : "新的城市长卷已经放进足迹");
-    } catch (e) { setFormError((e as Error).message); } finally { setBusy(false); }
+      const input = {
+        city: String(f.get("city")),
+        ...(placeImage ? { panoramaImage: placeImage } : {}),
+        visitDate: String(f.get("visitDate")) || null,
+        description: String(f.get("description")),
+      };
+      const place: Place = demo
+        ? {
+            ...editingPlace,
+            id: editingPlace?.id || crypto.randomUUID(),
+            ...input,
+            panoramaImage: placeImage || editingPlace?.panoramaImage,
+            sortOrder: editingPlace?.sortOrder ?? places.length,
+          }
+        : await request<Place>(
+            `/admin/places${editingPlace ? `/${editingPlace.id}` : ""}`,
+            {
+              method: editingPlace ? "PATCH" : "POST",
+              body: JSON.stringify(input),
+            },
+          );
+      if (generation !== loadGeneration.current) return;
+      if (!demo) {
+        // A write cannot turn a partial/failed initial list into a complete cache.
+        if (readyResources.current.has("places"))
+          cancelResource("places", true);
+        else invalidateResources("places");
+      }
+      if (demo)
+        demoActivity(
+          "places",
+          place.id,
+          editingPlace ? "updated" : "created",
+          place.city,
+          editingPlace ? "修改了足迹" : "新增了足迹",
+          `/places?activity=${place.id}`,
+        );
+      setPlaces((items) =>
+        editingPlace
+          ? items.map((item) => (item.id === place.id ? place : item))
+          : [...items, place],
+      );
+      setModal(null);
+      setEditingPlace(null);
+      setNotice(editingPlace ? "足迹已经更新" : "新的城市长卷已经放进足迹");
+    } catch (e) {
+      if (generation === loadGeneration.current)
+        setFormError((e as Error).message);
+    } finally {
+      if (generation === loadGeneration.current) setBusy(false);
+    }
   }
   async function deletePlace(place: Place) {
     if (!window.confirm(`确定删除“${place.city}”这条足迹吗？`)) return;
-    try { if (!demo) await request(`/admin/places/${place.id}`, { method: "DELETE" }); setPlaces((items) => items.filter((item) => item.id !== place.id)); if (demo) demoActivity("places", place.id, "deleted", place.city, "删除了足迹", `/places?activity=${place.id}`); setNotice("足迹已删除"); }
-    catch (e) { setNotice((e as Error).message); }
+    const generation = loadGeneration.current;
+    try {
+      if (!demo) {
+        await request(`/admin/places/${place.id}`, { method: "DELETE" });
+        if (generation !== loadGeneration.current) return;
+        if (readyResources.current.has("places"))
+          cancelResource("places", true);
+        else invalidateResources("places");
+      }
+      setPlaces((items) => items.filter((item) => item.id !== place.id));
+      if (demo)
+        demoActivity(
+          "places",
+          place.id,
+          "deleted",
+          place.city,
+          "删除了足迹",
+          `/places?activity=${place.id}`,
+        );
+      setNotice("足迹已删除");
+    } catch (e) {
+      if (generation === loadGeneration.current)
+        setNotice((e as Error).message);
+    }
   }
   async function movePlace(id: string, direction: -1 | 1) {
-    const index = places.findIndex((place) => place.id === id), target = index + direction;
+    const generation = loadGeneration.current;
+    const index = places.findIndex((place) => place.id === id),
+      target = index + direction;
     if (index < 0 || target < 0 || target >= places.length) return;
-    const next = [...places]; [next[index], next[target]] = [next[target], next[index]]; setPlaces(next);
-    try { if (!demo) await request("/admin/places/reorder", { method: "PATCH", body: JSON.stringify({ ids: next.map((place) => place.id) }) }); }
-    catch (e) { setPlaces(places); setNotice((e as Error).message); }
+    const next = [...places];
+    [next[index], next[target]] = [next[target], next[index]];
+    setPlaces(next);
+    try {
+      if (!demo)
+        await request("/admin/places/reorder", {
+          method: "PATCH",
+          body: JSON.stringify({ ids: next.map((place) => place.id) }),
+        });
+    } catch (e) {
+      if (generation !== loadGeneration.current) return;
+      setPlaces(places);
+      setNotice((e as Error).message);
+    }
   }
   const sectionHead = (title: string, subtitle: string, action?: ReactNode) => (
     <div className="page-heading">
@@ -649,16 +1041,35 @@ export default function App() {
             </NavLink>
           ))}
           <div className="more-menu">
-            <button className="more-menu-trigger" type="button" aria-haspopup="menu"><DotsThreeCircle size={19} />更多</button>
+            <button
+              className="more-menu-trigger"
+              type="button"
+              aria-haspopup="menu"
+            >
+              <DotsThreeCircle size={19} />
+              更多
+            </button>
             <div role="menu" aria-label="更多功能">
-              <Link role="menuitem" to="/records"><ChatCircleDots />记录盒<span>留言、故事和声音</span></Link>
-              <Link role="menuitem" to="/play"><GameController />一起玩<span>扭蛋与共同养成</span></Link>
-              <Link role="menuitem" to="/wishes"><ListChecks />愿望单<span>以后一起完成</span></Link>
+              <Link role="menuitem" to="/records">
+                <ChatCircleDots />
+                记录盒<span>留言、故事和声音</span>
+              </Link>
+              <Link role="menuitem" to="/play">
+                <GameController />
+                一起玩<span>扭蛋与共同养成</span>
+              </Link>
+              <Link role="menuitem" to="/wishes">
+                <ListChecks />
+                愿望单<span>以后一起完成</span>
+              </Link>
             </div>
           </div>
         </nav>
         <div className="header-actions">
-          {user && <div ref={setActivityTarget} className="activity-header-slot"/>}
+          {user && <MusicToggle music={music} />}
+          {user && (
+            <div ref={setActivityTarget} className="activity-header-slot" />
+          )}
           <button
             className="icon-button"
             onClick={() => setDark(!dark)}
@@ -693,335 +1104,496 @@ export default function App() {
           )}
         </div>
       </header>
+      <audio
+        ref={music.audioRef}
+        data-testid="background-audio"
+        aria-hidden="true"
+        hidden
+      />
       <main>
-        <ActivityCenter user={user} home={pathname === "/"} headerTarget={activityTarget} homeTarget={activityHome}/>
+        <ActivityCenter
+          user={user}
+          home={pathname === "/"}
+          headerTarget={activityTarget}
+          homeTarget={activityHome}
+        />
         {error && (
           <div className="error" role="alert">
             {error}
-            <button onClick={load}>重新加载</button>
+            <button
+              onClick={() => {
+                if (failedResources.current.size) retryResources();
+                else void load();
+              }}
+            >
+              重新加载
+            </button>
           </div>
         )}
         {!loaded ? (
           <div className="skeleton" aria-label="正在加载回忆" />
         ) : (
           <>
-            {pathname === "/" && (user || visitorCanView(privacy, "home") ? (
-              <>
-                <section className="hero">
-                  <div className="hero-copy">
-                    <div className="couple-label">
-                      <span className="avatar">晴</span>
-                      <span className="avatar second">杰</span>
-                      <span>
-                        {couple.female} <Heart size={13} weight="fill" />{" "}
-                        {couple.male}的小小宇宙
-                      </span>
-                    </div>
-                    <h1>
-                      把我们，
-                      <br />
-                      写进<span className="pink-word">日常</span>。
-                    </h1>
-                    <p className="hero-description">
-                      有些日子闪闪发光，有些日子平平常常。
-                      <br />
-                      只要身边是你，就都值得收藏。
-                    </p>
-                    <div className="day-counter">
-                      <span>我们已经一起走过</span>
-                      <div>
-                        <strong>
-                          {dayDiff(couple.togetherSince).toLocaleString()}
-                        </strong>
-                        <span>天</span>
-                        <Heart weight="duotone" size={25} />
-                      </div>
-                      <small>从 2026 年 9 月 12 日，到每一个明天</small>
-                    </div>
-                    <div className="hero-buttons">
-                      <button className="primary" onClick={() => openEdit()}>
-                        <Plus size={18} />
-                        记录此刻
-                      </button>
-                      <Link className="subtle-link" to="/timeline">
-                        翻翻我们的故事
-                        <ArrowRight size={17} />
-                      </Link>
-                    </div>
-                  </div>
-                  <div className="hero-visual">
-                    <div className="hero-photo">
-                      <div className="tape" />
-                      {coverImage ? (
-                        <img
-                          src={coverImage}
-                          alt="我们的封面照片"
-                          fetchPriority="high"
-                          decoding="async"
-                        />
-                      ) : (
-                        <div className="hero-photo-placeholder" role="status" aria-label="封面加载中" />
-                      )}
-                      {user && <label className="cover-change"><UploadSimple />{coverBusy ? "处理中" : "更换封面"}<input type="file" accept="image/*" onChange={chooseCover} disabled={coverBusy}/></label>}
-                      <div className="photo-caption">
-                        <span>和你一起，哪里都是好天气。</span>
-                        <Heart size={22} />
-                      </div>
-                    </div>
-                    <div className="date-sticker">
-                      <span>OUR DAYS</span>
-                      <strong>每一天</strong>
-                      <small>都想和你一起</small>
-                    </div>
-                    <Flower className="flower" size={58} weight="duotone" />
-                    <span className="hand-note">little moments, big love.</span>
-                  </div>
-                </section>
-                {user && <div ref={setActivityHome}/>}
-                <div className="intro-divider">
-                  <Heart size={16} />
-                  <span>两个人的小事，就是我们的全世界</span>
-                  <span className="divider-line" />
-                </div>
-                <section className="world-menu" aria-label="我们的小功能">
-                  <Link to="/records" className="world-menu-main"><ChatCircleDots weight="duotone"/><span><strong>记录盒</strong><small>留言、睡前故事、对话与语音</small></span><ArrowRight/></Link>
-                  <Link to="/play"><GameController weight="duotone"/><span><strong>一起玩</strong><small>养一株小芽，决定今晚吃什么</small></span></Link>
-                  <Link to="/wishes"><ListChecks weight="duotone"/><span><strong>未来愿望</strong><small>把以后想做的事写下来</small></span></Link>
-                  <Link to="/albums"><Images weight="duotone"/><span><strong>照片墙</strong><small>事件与事物，两本相册</small></span></Link>
-                </section>
-                <div className="home-columns">
-                  <section className="recent">
-                    <div className="section-title">
-                      <h2>
-                        最近的<span>小美好</span>
-                        <span className="tiny-flower">✳</span>
-                      </h2>
-                      <Link to="/timeline">
-                        全部回忆
-                        <ArrowUpRight size={16} />
-                      </Link>
-                    </div>
-                    <div className="memory-grid">
-                      {memoriesLoading ? <MemoryLoadingCards count={2} /> : visible.slice(0, 2).map(card)}
-                      {!memoriesLoading && visible.length === 0 && (
-                        <div className="home-memory-empty">
-                          <LockSimple weight="duotone"/>
-                          <p>{visitorCanView(privacy, "timeline") ? "还没有写给访客看的时光。" : "这里的故事，登录后再慢慢翻。"}</p>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                  <aside>
-                    <div className="anniversary-paper">
-                      <div className="paper-heading">
-                        <CalendarBlank size={21} />
-                        <h2>值得记住的日子</h2>
-                        <Link to="/anniversaries" aria-label="查看全部纪念日">
-                          <ArrowUpRight size={20} />
-                        </Link>
-                      </div>
-                      {anniversariesLoading ? <AnniversaryLoadingRows /> : anniversaries
-                        .slice(0, 4)
-                        .map((a) => {
-                          const d = anniversaryDays(a);
-                          return (
-                            <div className="anniversary-row" id={`activity-${a.id}`} key={a.id}>
-                              <div>
-                                <strong>{a.title}</strong>
-                                <small>{anniversaryLabel(a)}</small>
-                              </div>
-                              <span>
-                                {d.kind === "countdown" ? "还有 " : "已经 "}
-                                <b>{d.days}</b> 天
-                              </span>
-                            </div>
-                          );
-                        })}
-                      <p className="paper-note">平凡的日历，因为你有了期待。</p>
-                    </div>
-                    <Link to="/places" className="places-promo">
-                      <div>
-                        <span className="small-caps">PLACES WITH YOU</span>
-                        <h3>
-                          把喜欢的地方，
-                          <br />
-                          都走成我们的足迹。
-                        </h3>
-                        <span className="subtle-link">
-                          看看我们去过哪儿 <ArrowRight size={16} />
+            {pathname === "/" &&
+              (user || visitorCanView(privacy, "home") ? (
+                <>
+                  <section className="hero">
+                    <div className="hero-copy">
+                      <div className="couple-label">
+                        <span className="avatar">晴</span>
+                        <span className="avatar second">杰</span>
+                        <span>
+                          {couple.female} <Heart size={13} weight="fill" />{" "}
+                          {couple.male}的小小宇宙
                         </span>
                       </div>
-                      <GlobeHemisphereEast size={80} weight="duotone" />
-                    </Link>
-                  </aside>
-                </div>
-              </>
-            ) : (
-              <VisitorGate title="首页也暂时只留给我们" onLogin={() => setModal("login")}/>
-            ))}
-            {pathname === "/timeline" && (user || visitorCanView(privacy, "timeline") ? (
-              <>
-                {sectionHead(
-                  "时光有迹，喜欢有声。",
-                  "把散落在生活里的小美好，一页一页收好。",
-                  user ? (
-                    <button className="primary" onClick={() => openEdit()}>
-                      <Plus size={20} aria-hidden="true" />
-                      新增回忆
-                    </button>
-                  ) : undefined,
-                )}
-                <div className="filter-bar">
-                  <div className="filter-tabs">
-                    {["烟火日常", "小小幸福"].map((t) => (
-                      <button
-                        className={tag === t ? "active" : ""}
-                        key={t}
-                        onClick={() => setParams({ q, tag: t })}
-                      >
-                        {t}
-                      </button>
-                    ))}
-                  </div>
-                  <label className="search">
-                    <MagnifyingGlass />
-                    <input
-                      aria-label="搜索回忆"
-                      placeholder="找找某一段回忆…"
-                      value={q}
-                      onChange={(e) => setParams({ q: e.target.value, tag })}
-                    />
-                  </label>
-                </div>
-                <div className="timeline-grid">
-                  {memoriesLoading ? <MemoryLoadingCards count={4} /> : filtered.map(card)}
-                </div>
-                {!memoriesLoading && filtered.length === 0 && (
-                  <div className="empty">
-                    <Notebook size={42} />
-                    <h2>这里还没有回忆</h2>
-                    <p>换个关键词，或记下今天的故事。</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <VisitorGate title="这些时光，等登录后再一起翻看" onLogin={() => setModal("login")}/>
-            ))}
-            {pathname.startsWith("/albums") && (
-              <AlbumsPage user={user} onLogin={() => setModal("login")} albumId={pathname.startsWith("/albums/") ? decodeURIComponent(pathname.slice(8)) : null} publicAllowed={visitorCanView(privacy, "albums")} />
-            )}
-            {pathname === "/records" && <RecordsPage user={user} onLogin={() => setModal("login")} />}
-            {pathname === "/play" && <PlayPage user={user} onLogin={() => setModal("login")} />}
-            {pathname === "/wishes" && <WishesPage user={user} onLogin={() => setModal("login")} />}
-            {pathname === "/places" && (user || visitorCanView(privacy, "places") ? (
-              <>
-                {sectionHead(
-                  "世界很大，我们一起。",
-                  "每一幅长卷，都是我们共同到过的一座城市。",
-                  userRole === "ADMIN" ? (
-                    <button className="primary" onClick={() => openPlace()}>
-                      <Plus size={20} aria-hidden="true" />
-                      上传长卷
-                    </button>
-                  ) : undefined,
-                )}
-                <section className="place-stories">
-                    {placesLoading ? <PlaceLoadingCards /> : places.map((place, index) => (
-                        <article className="custom-place" id={`activity-${place.id}`} key={place.id}>
-                          {place.panoramaImage && <img className="place-panorama" src={place.panoramaImage} alt={`${place.city}的旅行长卷`} />}
-                          {(place.visitDate || place.description) && <div className="place-caption"><span>{place.visitDate?.replaceAll("-", ".")}</span><p>{place.description}</p></div>}
-                          {userRole === "ADMIN" && <div className="place-admin-actions" aria-label={`${place.city}的管理操作`}>
-                            <button onClick={() => movePlace(place.id, -1)} disabled={index === 0} aria-label={`上移${place.city}`}><ArrowUp/></button>
-                            <button onClick={() => movePlace(place.id, 1)} disabled={index === places.length - 1} aria-label={`下移${place.city}`}><ArrowDown/></button>
-                            <button onClick={() => openPlace(place)} aria-label={`编辑${place.city}`}><PencilSimple/></button>
-                            <button onClick={() => deletePlace(place)} aria-label={`删除${place.city}`}><Trash/></button>
-                          </div>}
-                        </article>
-                      ))}
-                    {!placesLoading && places.length === 0 && (
-                      <div className="empty module-empty">
-                        <MapPin size={42} />
-                        <h2>足迹还没有内容</h2>
-                        <p>从这里添加第一个想记住的地点。</p>
-                      </div>
-                    )}
-                </section>
-              </>
-            ) : (
-              <VisitorGate title="足迹先留在两个人的地图里" onLogin={() => setModal("login")}/>
-            ))}
-            {pathname === "/anniversaries" && (user || visitorCanView(privacy, "anniversaries") ? (
-              <>
-                {sectionHead(
-                  "日历里的偏爱。",
-                  "有些日期，只是念起来就会微笑。",
-                  user ? (
-                    <button className="primary" onClick={() => openAnniversary()}>
-                      <Plus size={20} aria-hidden="true" />
-                      新增纪念日
-                    </button>
-                  ) : undefined,
-                )}
-                <div className="anniversary-grid">
-                  {anniversariesLoading ? <AnniversaryLoadingCards /> : anniversaries.map((a, index) => {
-                    const d = anniversaryDays(a);
-                    return (
-                      <article className="anniversary-paper" id={`activity-${a.id}`} key={a.id}>
-                        <div className="anniv-head">
-                          <span className="anniv-icon">
-                            <CalendarBlank size={17} />
-                          </span>
-                          <h2>{a.title}</h2>
-                        </div>
-                        <p>
-                          {anniversaryLabel(a)}
-                          {a.annual && (
-                            <span className="anniv-tag">每年纪念</span>
-                          )}
-                          {a.lunar && (
-                            <span className="next-lunar-date">
-                              下次公历日期：{occurrence(a)}
-                            </span>
-                          )}
-                        </p>
-                        <div className="anniv-days">
-                          <span>{d.kind === "countdown" ? "还有" : "已经"}</span>
-                          <strong>{d.days}</strong>
+                      <h1>
+                        把我们，
+                        <br />
+                        写进<span className="pink-word">日常</span>。
+                      </h1>
+                      <p className="hero-description">
+                        有些日子闪闪发光，有些日子平平常常。
+                        <br />
+                        只要身边是你，就都值得收藏。
+                      </p>
+                      <div className="day-counter">
+                        <span>我们已经一起走过</span>
+                        <div>
+                          <strong>
+                            {dayDiff(couple.togetherSince).toLocaleString()}
+                          </strong>
                           <span>天</span>
+                          <Heart weight="duotone" size={25} />
                         </div>
+                        <small>从 2026 年 9 月 12 日，到每一个明天</small>
+                      </div>
+                      <div className="hero-buttons">
+                        <button className="primary" onClick={() => openEdit()}>
+                          <Plus size={18} />
+                          记录此刻
+                        </button>
+                        <Link className="subtle-link" to="/timeline">
+                          翻翻我们的故事
+                          <ArrowRight size={17} />
+                        </Link>
+                      </div>
+                    </div>
+                    <div className="hero-visual">
+                      <div className="hero-photo">
+                        <div className="tape" />
+                        {coverImage ? (
+                          <img
+                            src={coverImage}
+                            alt="我们的封面照片"
+                            fetchPriority="high"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div
+                            className="hero-photo-placeholder"
+                            role="status"
+                            aria-label="封面加载中"
+                          />
+                        )}
                         {user && (
-                          <div className="anniv-actions" aria-label={`${a.title}的操作`}>
-                            <button onClick={() => moveAnniversary(a.id, -1)} disabled={index === 0} aria-label={`上移${a.title}`} title="上移">
-                              <ArrowUp size={18} />
-                            </button>
-                            <button onClick={() => moveAnniversary(a.id, 1)} disabled={index === anniversaries.length - 1} aria-label={`下移${a.title}`} title="下移">
-                              <ArrowDown size={18} />
-                            </button>
-                            <button onClick={() => openAnniversary(a)} aria-label={`编辑${a.title}`} title="编辑">
-                              <PencilSimple size={18} />
-                            </button>
-                            <button className="danger" onClick={() => deleteAnniversary(a)} aria-label={`删除${a.title}`} title="删除">
-                              <Trash size={18} />
-                            </button>
+                          <label className="cover-change">
+                            <UploadSimple />
+                            {coverBusy ? "处理中" : "更换封面"}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={chooseCover}
+                              disabled={coverBusy}
+                            />
+                          </label>
+                        )}
+                        <div className="photo-caption">
+                          <span>和你一起，哪里都是好天气。</span>
+                          <Heart size={22} />
+                        </div>
+                      </div>
+                      <div className="date-sticker">
+                        <span>OUR DAYS</span>
+                        <strong>每一天</strong>
+                        <small>都想和你一起</small>
+                      </div>
+                      <Flower className="flower" size={58} weight="duotone" />
+                      <span className="hand-note">
+                        little moments, big love.
+                      </span>
+                    </div>
+                  </section>
+                  {user && <div ref={setActivityHome} />}
+                  <div className="intro-divider">
+                    <Heart size={16} />
+                    <span>两个人的小事，就是我们的全世界</span>
+                    <span className="divider-line" />
+                  </div>
+                  <section className="world-menu" aria-label="我们的小功能">
+                    <Link to="/records" className="world-menu-main">
+                      <ChatCircleDots weight="duotone" />
+                      <span>
+                        <strong>记录盒</strong>
+                        <small>留言、睡前故事、对话与语音</small>
+                      </span>
+                      <ArrowRight />
+                    </Link>
+                    <Link to="/play">
+                      <GameController weight="duotone" />
+                      <span>
+                        <strong>一起玩</strong>
+                        <small>养一株小芽，决定今晚吃什么</small>
+                      </span>
+                    </Link>
+                    <Link to="/wishes">
+                      <ListChecks weight="duotone" />
+                      <span>
+                        <strong>未来愿望</strong>
+                        <small>把以后想做的事写下来</small>
+                      </span>
+                    </Link>
+                    <Link to="/albums">
+                      <Images weight="duotone" />
+                      <span>
+                        <strong>照片墙</strong>
+                        <small>事件与事物，两本相册</small>
+                      </span>
+                    </Link>
+                  </section>
+                  <div className="home-columns">
+                    <section className="recent">
+                      <div className="section-title">
+                        <h2>
+                          最近的<span>小美好</span>
+                          <span className="tiny-flower">✳</span>
+                        </h2>
+                        <Link to="/timeline">
+                          全部回忆
+                          <ArrowUpRight size={16} />
+                        </Link>
+                      </div>
+                      <div className="memory-grid">
+                        {memoriesLoading ? (
+                          <MemoryLoadingCards count={2} />
+                        ) : (
+                          visible.slice(0, 2).map(card)
+                        )}
+                        {!memoriesLoading && visible.length === 0 && (
+                          <div className="home-memory-empty">
+                            <LockSimple weight="duotone" />
+                            <p>
+                              {visitorCanView(privacy, "timeline")
+                                ? "还没有写给访客看的时光。"
+                                : "这里的故事，登录后再慢慢翻。"}
+                            </p>
                           </div>
                         )}
-                      </article>
-                    );
-                  })}
-                  {user && !anniversariesLoading && (
-                    <button
-                      className="anniversary-paper add-card"
-                      onClick={() => openAnniversary()}
-                    >
-                      <Plus size={20} aria-hidden="true" />
-                      <span>再记一个值得记住的日子</span>
-                    </button>
+                      </div>
+                    </section>
+                    <aside>
+                      <div className="anniversary-paper">
+                        <div className="paper-heading">
+                          <CalendarBlank size={21} />
+                          <h2>值得记住的日子</h2>
+                          <Link to="/anniversaries" aria-label="查看全部纪念日">
+                            <ArrowUpRight size={20} />
+                          </Link>
+                        </div>
+                        {anniversariesLoading ? (
+                          <AnniversaryLoadingRows />
+                        ) : (
+                          anniversaries.slice(0, 4).map((a) => {
+                            const d = anniversaryDays(a);
+                            return (
+                              <div
+                                className="anniversary-row"
+                                id={`activity-${a.id}`}
+                                key={a.id}
+                              >
+                                <div>
+                                  <strong>{a.title}</strong>
+                                  <small>{anniversaryLabel(a)}</small>
+                                </div>
+                                <span>
+                                  {d.kind === "countdown" ? "还有 " : "已经 "}
+                                  <b>{d.days}</b> 天
+                                </span>
+                              </div>
+                            );
+                          })
+                        )}
+                        <p className="paper-note">
+                          平凡的日历，因为你有了期待。
+                        </p>
+                      </div>
+                      <Link to="/places" className="places-promo">
+                        <div>
+                          <span className="small-caps">PLACES WITH YOU</span>
+                          <h3>
+                            把喜欢的地方，
+                            <br />
+                            都走成我们的足迹。
+                          </h3>
+                          <span className="subtle-link">
+                            看看我们去过哪儿 <ArrowRight size={16} />
+                          </span>
+                        </div>
+                        <GlobeHemisphereEast size={80} weight="duotone" />
+                      </Link>
+                    </aside>
+                  </div>
+                </>
+              ) : (
+                <VisitorGate
+                  title="首页也暂时只留给我们"
+                  onLogin={() => setModal("login")}
+                />
+              ))}
+            {pathname === "/timeline" &&
+              (user || visitorCanView(privacy, "timeline") ? (
+                <>
+                  {sectionHead(
+                    "时光有迹，喜欢有声。",
+                    "把散落在生活里的小美好，一页一页收好。",
+                    user ? (
+                      <button className="primary" onClick={() => openEdit()}>
+                        <Plus size={20} aria-hidden="true" />
+                        新增回忆
+                      </button>
+                    ) : undefined,
                   )}
-                </div>
-              </>
-            ) : (
-              <VisitorGate title="特别的日子，登录后再慢慢数" onLogin={() => setModal("login")}/>
-            ))}
+                  <div className="filter-bar">
+                    <div className="filter-tabs">
+                      {["烟火日常", "小小幸福"].map((t) => (
+                        <button
+                          className={tag === t ? "active" : ""}
+                          key={t}
+                          onClick={() => setParams({ q, tag: t })}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    <label className="search">
+                      <MagnifyingGlass />
+                      <input
+                        aria-label="搜索回忆"
+                        placeholder="找找某一段回忆…"
+                        value={q}
+                        onChange={(e) => setParams({ q: e.target.value, tag })}
+                      />
+                    </label>
+                  </div>
+                  <div className="timeline-grid">
+                    {memoriesLoading ? (
+                      <MemoryLoadingCards count={4} />
+                    ) : (
+                      filtered.map(card)
+                    )}
+                  </div>
+                  {!memoriesLoading && filtered.length === 0 && (
+                    <div className="empty">
+                      <Notebook size={42} />
+                      <h2>这里还没有回忆</h2>
+                      <p>换个关键词，或记下今天的故事。</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <VisitorGate
+                  title="这些时光，等登录后再一起翻看"
+                  onLogin={() => setModal("login")}
+                />
+              ))}
+            {pathname.startsWith("/albums") && (
+              <AlbumsPage
+                user={user}
+                onLogin={() => setModal("login")}
+                albumId={
+                  pathname.startsWith("/albums/")
+                    ? decodeURIComponent(pathname.slice(8))
+                    : null
+                }
+                publicAllowed={visitorCanView(privacy, "albums")}
+              />
+            )}
+            {pathname === "/records" && (
+              <RecordsPage user={user} onLogin={() => setModal("login")} />
+            )}
+            {pathname === "/play" && (
+              <PlayPage user={user} onLogin={() => setModal("login")} />
+            )}
+            {pathname === "/wishes" && (
+              <WishesPage user={user} onLogin={() => setModal("login")} />
+            )}
+            {pathname === "/places" &&
+              (user || visitorCanView(privacy, "places") ? (
+                <>
+                  {sectionHead(
+                    "世界很大，我们一起。",
+                    "每一幅长卷，都是我们共同到过的一座城市。",
+                    userRole === "ADMIN" ? (
+                      <button className="primary" onClick={() => openPlace()}>
+                        <Plus size={20} aria-hidden="true" />
+                        上传长卷
+                      </button>
+                    ) : undefined,
+                  )}
+                  <section className="place-stories">
+                    {!loaded || placesLoading ? (
+                      <PlaceLoadingCards />
+                    ) : (
+                      places.map((place, index) => (
+                        <PlaceCard
+                          key={`${user ? "private" : "public"}:${place.id}`}
+                          place={place}
+                          index={index}
+                          total={places.length}
+                          canManage={userRole === "ADMIN"}
+                          onMove={movePlace}
+                          onEdit={openPlace}
+                          onDelete={deletePlace}
+                        />
+                      ))
+                    )}
+                    {placesError && (
+                      <div className="empty" role="alert">
+                        <p>{placesError}</p>
+                        <button className="secondary" onClick={retryResources}>
+                          重新加载足迹
+                        </button>
+                      </div>
+                    )}
+                    {loaded &&
+                      !placesLoading &&
+                      !placesError &&
+                      places.length === 0 && (
+                        <div className="empty module-empty">
+                          <MapPin size={42} />
+                          <h2>足迹还没有内容</h2>
+                          <p>从这里添加第一个想记住的地点。</p>
+                        </div>
+                      )}
+                  </section>
+                </>
+              ) : (
+                <VisitorGate
+                  title="足迹先留在两个人的地图里"
+                  onLogin={() => setModal("login")}
+                />
+              ))}
+            {pathname === "/anniversaries" &&
+              (user || visitorCanView(privacy, "anniversaries") ? (
+                <>
+                  {sectionHead(
+                    "日历里的偏爱。",
+                    "有些日期，只是念起来就会微笑。",
+                    user ? (
+                      <button
+                        className="primary"
+                        onClick={() => openAnniversary()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        新增纪念日
+                      </button>
+                    ) : undefined,
+                  )}
+                  <div className="anniversary-grid">
+                    {anniversariesLoading ? (
+                      <AnniversaryLoadingCards />
+                    ) : (
+                      anniversaries.map((a, index) => {
+                        const d = anniversaryDays(a);
+                        return (
+                          <article
+                            className="anniversary-paper"
+                            id={`activity-${a.id}`}
+                            key={a.id}
+                          >
+                            <div className="anniv-head">
+                              <span className="anniv-icon">
+                                <CalendarBlank size={17} />
+                              </span>
+                              <h2>{a.title}</h2>
+                            </div>
+                            <p>
+                              {anniversaryLabel(a)}
+                              {a.annual && (
+                                <span className="anniv-tag">每年纪念</span>
+                              )}
+                              {a.lunar && (
+                                <span className="next-lunar-date">
+                                  下次公历日期：{occurrence(a)}
+                                </span>
+                              )}
+                            </p>
+                            <div className="anniv-days">
+                              <span>
+                                {d.kind === "countdown" ? "还有" : "已经"}
+                              </span>
+                              <strong>{d.days}</strong>
+                              <span>天</span>
+                            </div>
+                            {user && (
+                              <div
+                                className="anniv-actions"
+                                aria-label={`${a.title}的操作`}
+                              >
+                                <button
+                                  onClick={() => moveAnniversary(a.id, -1)}
+                                  disabled={index === 0}
+                                  aria-label={`上移${a.title}`}
+                                  title="上移"
+                                >
+                                  <ArrowUp size={18} />
+                                </button>
+                                <button
+                                  onClick={() => moveAnniversary(a.id, 1)}
+                                  disabled={index === anniversaries.length - 1}
+                                  aria-label={`下移${a.title}`}
+                                  title="下移"
+                                >
+                                  <ArrowDown size={18} />
+                                </button>
+                                <button
+                                  onClick={() => openAnniversary(a)}
+                                  aria-label={`编辑${a.title}`}
+                                  title="编辑"
+                                >
+                                  <PencilSimple size={18} />
+                                </button>
+                                <button
+                                  className="danger"
+                                  onClick={() => deleteAnniversary(a)}
+                                  aria-label={`删除${a.title}`}
+                                  title="删除"
+                                >
+                                  <Trash size={18} />
+                                </button>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })
+                    )}
+                    {user && !anniversariesLoading && (
+                      <button
+                        className="anniversary-paper add-card"
+                        onClick={() => openAnniversary()}
+                      >
+                        <Plus size={20} aria-hidden="true" />
+                        <span>再记一个值得记住的日子</span>
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <VisitorGate
+                  title="特别的日子，登录后再慢慢数"
+                  onLogin={() => setModal("login")}
+                />
+              ))}
             {pathname === "/admin" && (
               <>
                 {sectionHead(
@@ -1047,42 +1619,122 @@ export default function App() {
                         ? "当前为演示管理，内容只保存在这个浏览器。"
                         : "双人共同维护；新记录默认私密。"}
                     </div>
-                    <ProfileSettings user={user} onSaved={async (nickname, loginRequired, username) => {
-                      if (loginRequired) { setLoginUsername(username); setLoginHint("个人信息已更新，请使用更新后的账号信息重新登录。"); await load(); setNotice("账号已更新，请使用新的登录信息重新登录"); setFormError(""); setModal("login"); }
-                      else { setUser(nickname); setNotice("个人信息已保存"); }
-                    }}/>
+                    <ProfileSettings
+                      user={user}
+                      onSaved={async (nickname, loginRequired, username) => {
+                        if (loginRequired) {
+                          music.stop();
+                          setLoginUsername(username);
+                          setLoginHint(
+                            "个人信息已更新，请使用更新后的账号信息重新登录。",
+                          );
+                          await load();
+                          setNotice("账号已更新，请使用新的登录信息重新登录");
+                          setFormError("");
+                          setModal("login");
+                        } else {
+                          setUser(nickname);
+                          setNotice("个人信息已保存");
+                        }
+                      }}
+                    />
+                    <MusicPanel music={music} />
                     {userRole === "ADMIN" && (
-                      <section className="privacy-panel" aria-labelledby="privacy-title">
+                      <section
+                        className="privacy-panel"
+                        aria-labelledby="privacy-title"
+                      >
                         <div className="privacy-panel-heading">
-                          <div className="privacy-panel-icon"><LockSimple weight="duotone"/></div>
+                          <div className="privacy-panel-icon">
+                            <LockSimple weight="duotone" />
+                          </div>
                           <div>
                             <h2 id="privacy-title">访客可见设置</h2>
-                            <p>这里决定未登录的人能够看到哪些内容，真正的数据权限也会在后端同步生效。</p>
+                            <p>
+                              这里决定未登录的人能够看到哪些内容，真正的数据权限也会在后端同步生效。
+                            </p>
                           </div>
                         </div>
                         <fieldset className="privacy-mode">
                           <legend>整站访客模式</legend>
-                          <label className={privacyDraft.mode === "PRIVATE" ? "selected" : ""}>
-                            <input type="radio" name="privacy-mode" checked={privacyDraft.mode === "PRIVATE"} onChange={() => setPrivacyDraft((value) => ({ ...value, mode: "PRIVATE" }))}/>
-                            <span><strong>完全私密</strong><small>访客只能看到温柔的登录提示</small></span>
+                          <label
+                            className={
+                              privacyDraft.mode === "PRIVATE" ? "selected" : ""
+                            }
+                          >
+                            <input
+                              type="radio"
+                              name="privacy-mode"
+                              checked={privacyDraft.mode === "PRIVATE"}
+                              onChange={() =>
+                                setPrivacyDraft((value) => ({
+                                  ...value,
+                                  mode: "PRIVATE",
+                                }))
+                              }
+                            />
+                            <span>
+                              <strong>完全私密</strong>
+                              <small>访客只能看到温柔的登录提示</small>
+                            </span>
                           </label>
-                          <label className={privacyDraft.mode === "SELECTED" ? "selected" : ""}>
-                            <input type="radio" name="privacy-mode" checked={privacyDraft.mode === "SELECTED"} onChange={() => setPrivacyDraft((value) => ({ ...value, mode: "SELECTED" }))}/>
-                            <span><strong>允许精选内容公开</strong><small>按照下面的模块范围对访客开放</small></span>
+                          <label
+                            className={
+                              privacyDraft.mode === "SELECTED" ? "selected" : ""
+                            }
+                          >
+                            <input
+                              type="radio"
+                              name="privacy-mode"
+                              checked={privacyDraft.mode === "SELECTED"}
+                              onChange={() =>
+                                setPrivacyDraft((value) => ({
+                                  ...value,
+                                  mode: "SELECTED",
+                                }))
+                              }
+                            />
+                            <span>
+                              <strong>允许精选内容公开</strong>
+                              <small>按照下面的模块范围对访客开放</small>
+                            </span>
                           </label>
                         </fieldset>
-                        <fieldset className="privacy-modules" disabled={privacyDraft.mode === "PRIVATE"}>
+                        <fieldset
+                          className="privacy-modules"
+                          disabled={privacyDraft.mode === "PRIVATE"}
+                        >
                           <legend>访客可以进入</legend>
                           {privacyModules.map(([key, label, description]) => (
                             <label key={key}>
-                              <span><strong>{label}</strong><small>{description}</small></span>
-                              <input type="checkbox" checked={privacyDraft[key]} onChange={(event) => setPrivacyDraft((value) => ({ ...value, [key]: event.target.checked }))}/>
+                              <span>
+                                <strong>{label}</strong>
+                                <small>{description}</small>
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={privacyDraft[key]}
+                                onChange={(event) =>
+                                  setPrivacyDraft((value) => ({
+                                    ...value,
+                                    [key]: event.target.checked,
+                                  }))
+                                }
+                              />
                             </label>
                           ))}
                         </fieldset>
                         <div className="privacy-panel-footer">
-                          <p>关闭某个模块后，首页仍可保留它的入口，访客点开时会看到私密提示。</p>
-                          <button className="primary" onClick={savePrivacy} disabled={privacyBusy}>{privacyBusy ? "正在保存" : "保存访客设置"}</button>
+                          <p>
+                            关闭某个模块后，首页仍可保留它的入口，访客点开时会看到私密提示。
+                          </p>
+                          <button
+                            className="primary"
+                            onClick={savePrivacy}
+                            disabled={privacyBusy}
+                          >
+                            {privacyBusy ? "正在保存" : "保存访客设置"}
+                          </button>
                         </div>
                       </section>
                     )}
@@ -1133,12 +1785,13 @@ export default function App() {
               "/records",
               "/play",
               "/wishes",
-            ].includes(pathname) && !pathname.startsWith("/albums/") && (
-              <div className="empty">
-                <h1>这一页，还没有写下故事。</h1>
-                <Link to="/">回到首页</Link>
-              </div>
-            )}
+            ].includes(pathname) &&
+              !pathname.startsWith("/albums/") && (
+                <div className="empty">
+                  <h1>这一页，还没有写下故事。</h1>
+                  <Link to="/">回到首页</Link>
+                </div>
+              )}
           </>
         )}
       </main>
@@ -1148,6 +1801,14 @@ export default function App() {
           拾光
         </div>
         <p>把普通的日子，过成喜欢的样子。</p>
+        <a
+          className="icp-link"
+          href="https://beian.miit.gov.cn/"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          苏ICP备2026086858号-1
+        </a>
       </footer>
       <nav className="mobile-nav" aria-label="手机导航">
         {nav.map(([url, label, Icon]) => (
@@ -1170,7 +1831,11 @@ export default function App() {
       <Dialog.Root
         open={modal !== null}
         onOpenChange={(o) => {
-          if (!o) setModal(null);
+          if (!o) {
+            ++placeSelection.current;
+            setPlaceImageBusy(false);
+            setModal(null);
+          }
         }}
       >
         <Dialog.Portal>
@@ -1187,10 +1852,12 @@ export default function App() {
                     ? "修改这个特别的日子"
                     : "记住一个特别的日子"
                   : modal === "place"
-                      ? editingPlace ? "整理这条足迹" : "上传一幅城市长卷"
-                  : editing
-                    ? "再写一点，这段回忆"
-                    : "今天，有什么小美好？"}
+                    ? editingPlace
+                      ? "整理这条足迹"
+                      : "上传一幅城市长卷"
+                    : editing
+                      ? "再写一点，这段回忆"
+                      : "今天，有什么小美好？"}
             </Dialog.Title>
             <Dialog.Description>
               {modal === "login"
@@ -1198,8 +1865,8 @@ export default function App() {
                   ? "当前是示例空间，进入后可体验编辑。"
                   : loginHint || "只有你们两人可以登录，完整故事只对彼此可见。"
                 : modal === "place"
-                    ? "请上传已经制作完成的横向长卷，普通成员只能浏览。"
-                : "不必是大事，想记住的就值得。"}
+                  ? "请上传已经制作完成的横向长卷，普通成员只能浏览。"
+                  : "不必是大事，想记住的就值得。"}
             </Dialog.Description>
             {modal === "login" ? (
               <form onSubmit={login}>
@@ -1275,13 +1942,14 @@ export default function App() {
                         name="lunarMonth"
                         defaultValue={editingAnniversary?.lunar?.month || 1}
                       >
-                        {Array.from({ length: 12 }, (_, index) => index + 1).map(
-                          (month) => (
-                            <option key={month} value={month}>
-                              {month} 月
-                            </option>
-                          ),
-                        )}
+                        {Array.from(
+                          { length: 12 },
+                          (_, index) => index + 1,
+                        ).map((month) => (
+                          <option key={month} value={month}>
+                            {month} 月
+                          </option>
+                        ))}
                       </select>
                     </label>
                     <label>
@@ -1290,13 +1958,14 @@ export default function App() {
                         name="lunarDay"
                         defaultValue={editingAnniversary?.lunar?.day || 1}
                       >
-                        {Array.from({ length: 30 }, (_, index) => index + 1).map(
-                          (day) => (
-                            <option key={day} value={day}>
-                              {day} 日
-                            </option>
-                          ),
-                        )}
+                        {Array.from(
+                          { length: 30 },
+                          (_, index) => index + 1,
+                        ).map((day) => (
+                          <option key={day} value={day}>
+                            {day} 日
+                          </option>
+                        ))}
                       </select>
                     </label>
                   </div>
@@ -1322,10 +1991,15 @@ export default function App() {
                 </label>
                 {anniversaryLunar && (
                   <p className="form-hint">
-                    <CalendarBlank />农历日期会在每年自动换算为对应的公历日期。
+                    <CalendarBlank />
+                    农历日期会在每年自动换算为对应的公历日期。
                   </p>
                 )}
-                {formError && <p className="error" role="alert">{formError}</p>}
+                {formError && (
+                  <p className="error" role="alert">
+                    {formError}
+                  </p>
+                )}
                 <button className="primary" disabled={busy}>
                   {busy
                     ? "正在保存…"
@@ -1348,19 +2022,84 @@ export default function App() {
                 </label>
                 <label>
                   到访日期
-                  <input name="visitDate" type="date" defaultValue={editingPlace?.visitDate}/>
+                  <input
+                    name="visitDate"
+                    type="date"
+                    defaultValue={editingPlace?.visitDate || ""}
+                  />
                 </label>
                 <label>
                   一句话说明
-                  <textarea name="description" rows={2} maxLength={500} defaultValue={editingPlace?.description} placeholder="这座城市最想记住的是什么？"/>
+                  <textarea
+                    name="description"
+                    rows={2}
+                    maxLength={500}
+                    defaultValue={editingPlace?.description}
+                    placeholder="这座城市最想记住的是什么？"
+                  />
                 </label>
                 <div className="photo-picker">
                   <span>城市长卷成图</span>
-                  {placeImage ? <div className="photo-preview place-preview"><img src={placeImage} alt="城市长卷预览" /><button type="button" onClick={() => setPlaceImage("")}><X size={16} />移除</button></div> : <label className="upload-photo place-upload"><Camera size={20} />选择长卷图片<input type="file" accept="image/*" onChange={choosePlaceImage} /></label>}
-                  <small>推荐 7:1，允许 6:1 至 8:1；上传后将完整展示，不会再次生成或裁切。</small>
+                  {(placeImage ||
+                    editingPlace?.image?.url ||
+                    editingPlace?.panoramaImage) && (
+                    <div className="photo-preview place-preview">
+                      <img
+                        src={
+                          placeImage ||
+                          editingPlace?.image?.url ||
+                          editingPlace?.panoramaImage
+                        }
+                        alt="城市长卷预览"
+                      />
+                      {placeImage && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            ++placeSelection.current;
+                            setPlaceImageBusy(false);
+                            setPlaceImage("");
+                          }}
+                        >
+                          <X size={16} />
+                          {editingPlace ? "取消替换" : "移除"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  <label className="upload-photo place-upload">
+                    <Camera size={20} />
+                    {placeImageBusy
+                      ? "正在处理图片…"
+                      : editingPlace
+                        ? "选择替换图片"
+                        : "选择长卷图片"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      disabled={busy || placeImageBusy}
+                      onChange={choosePlaceImage}
+                    />
+                  </label>
+                  <small>
+                    推荐 7:1，允许 6:1 至 8:1；完整保留内容，手机可左右滑阅。
+                    {editingPlace && "不选择新图会保留原长卷。"}
+                  </small>
                 </div>
-                {formError && <p className="error" role="alert">{formError}</p>}
-                <button className="primary" disabled={busy}>{busy ? "正在保存…" : editingPlace ? "保存足迹" : "发布到足迹"}</button>
+                {formError && (
+                  <p className="error" role="alert">
+                    {formError}
+                  </p>
+                )}
+                <button className="primary" disabled={busy || placeImageBusy}>
+                  {placeImageBusy
+                    ? "正在处理图片…"
+                    : busy
+                      ? "正在保存…"
+                      : editingPlace
+                        ? "保存足迹"
+                        : "发布到足迹"}
+                </button>
               </form>
             ) : (
               <form key={editing?.id || "new"} onSubmit={saveMemory}>
@@ -1486,9 +2225,7 @@ export default function App() {
                   />
                 )}
                 <div className="detail-body">
-                  <span className="meta">
-                    {selected.date}
-                  </span>
+                  <span className="meta">{selected.date}</span>
                   <Dialog.Title>{selected.title}</Dialog.Title>
                   <Dialog.Description className="story-body">
                     {user ? selected.body : selected.publicSummary}

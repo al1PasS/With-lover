@@ -8,6 +8,254 @@ servers:
 security:
   - session: []
 paths:
+  /places:
+    get:
+      description: 登录成员可见的全部足迹元数据；不包含原图或 Base64。private, no-store。
+      responses:
+        "200":
+          description: 按顺序排列的轻量足迹
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Place" } }
+        "401": { description: 请先登录 }
+  /public/places:
+    get:
+      security: []
+      description: 每次检查足迹访客可见设置；不包含图片正文，no-store。
+      responses:
+        "200":
+          description: 含公开图片 URL 的轻量足迹列表
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Place" } }
+        "403": { description: 足迹未向访客开放 }
+  /admin/places:
+    post:
+      description: 管理员新增足迹；要求 CSRF。图片必须为有效 JPEG、PNG 或 WebP data URL，比例 6–8:1。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/PlaceInput"
+                - type: object
+                  required: [panoramaImage]
+      responses:
+        "201":
+          description: 新足迹元数据，不回传图片正文
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Place" }
+        "400": { description: 内容或图片无效 }
+        "401": { description: 请先登录 }
+        "403": { description: 仅管理员可写，或 CSRF 无效 }
+        "429": { description: 图片处理繁忙，请稍后重试 }
+  /admin/places/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+    patch:
+      description: 管理员编辑，要求 CSRF。省略或 null 的 panoramaImage 保留旧图；空串或资源 URL 不可作为新图。文字编辑不改变图片版本。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlaceInput" }
+      responses:
+        "200":
+          description: 更新后的轻量足迹
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Place" }
+        "400": { description: 内容或图片无效 }
+        "401": { description: 请先登录 }
+        "403": { description: 仅管理员可写，或 CSRF 无效 }
+        "404": { description: 足迹已删除 }
+        "429": { description: 图片处理繁忙，请稍后重试 }
+    delete:
+      description: 管理员删除足迹及派生图，要求 CSRF。
+      responses:
+        "204": { description: 已删除 }
+        "401": { description: 请先登录 }
+        "403": { description: 仅管理员可写，或 CSRF 无效 }
+        "404": { description: 足迹已删除 }
+  /admin/places/reorder:
+    patch:
+      description: 管理员提交全部足迹 ID 的目标顺序，要求 CSRF；返回轻量元数据。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, minItems: 1, uniqueItems: true, items: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 重排后的轻量足迹
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Place" } }
+        "400": { description: 足迹列表已变化，请刷新 }
+        "403": { description: 仅管理员可写，或 CSRF 无效 }
+  /media/places/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      - { in: query, name: v, required: true, schema: { type: string, format: uuid }, description: 图片版本；旧版本不可读取新内容 }
+      - { in: query, name: w, schema: { type: integer, enum: [960, 1920, 3200], default: 1920 }, description: 目标宽度；不放大原图 }
+    get:
+      description: 成员鉴权读取独立 JPEG 派生图，private, no-store；存量图片首次读取时受限生成，不将私图持久化到浏览器。
+      responses:
+        "200":
+          description: JPEG 图片
+          headers:
+            Cache-Control: { schema: { type: string }, description: "private, no-store" }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "400": { description: 无效尺寸或版本参数 }
+        "401": { description: 请先登录 }
+        "404": { description: 图片或版本不存在 }
+        "422": { description: 旧图片无法安全解码；原数据保留 }
+        "429": { description: 图片处理繁忙 }
+  /public/media/places/{id}:
+    parameters:
+      - { in: path, name: id, required: true, schema: { type: string, format: uuid } }
+      - { in: query, name: v, required: true, schema: { type: string, format: uuid } }
+      - { in: query, name: w, schema: { type: integer, enum: [960, 1920, 3200], default: 1920 } }
+    get:
+      security: []
+      description: 每次先检查足迹公开设置、存在性和版本，再处理 ETag。仅成功图片可 private, no-cache；撤权和错误 no-store，不使用长期强缓存。
+      parameters:
+        - { in: header, name: If-None-Match, schema: { type: string } }
+      responses:
+        "200":
+          description: 允许公开的 JPEG 派生图
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string }, description: "private, no-cache" }
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+        "304":
+          description: 权限和版本有效且图片未变化
+          headers:
+            ETag: { schema: { type: string } }
+            Cache-Control: { schema: { type: string }, description: "private, no-cache" }
+        "400": { description: 无效尺寸或版本参数 }
+        "403": { description: 足迹未向访客开放；不返回 304 }
+        "404": { description: 图片或版本不存在 }
+        "422": { description: 旧图片无法安全解码 }
+        "429": { description: 图片处理繁忙 }
+  /music:
+    get:
+      description: 两位登录成员共享的私有曲库和全站选曲一致快照。不返回文件系统路径。
+      responses:
+        "200":
+          description: 曲库、当前歌曲及递增版本；声音开关不在此共享
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MusicSnapshot" }
+        "401": { description: 请先登录 }
+  /music/tracks:
+    post:
+      description: 双方均可上传 MP3 或 PCM WAV；不自动改变当前背景音乐。要求 CSRF。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary, description: 最大 20 MiB，必须为有效的 MP3 或 PCM WAV }
+                title: { type: string, maxLength: 120, description: 可选显示名称；省略时使用文件名 }
+      responses:
+        "201":
+          description: 上传成功后的共享快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MusicSnapshot" }
+        "400": { description: 文件或显示名称无效 }
+        "401": { description: 请先登录 }
+        "403": { description: CSRF 令牌无效 }
+        "409": { description: 曲库数量或总容量达到上限 }
+        "413": { description: 文件超过大小上限 }
+        "415": { description: 不支持的音频格式 }
+        "429": { description: 同时上传过多，请稍后重试 }
+  /music/selection:
+    put:
+      description: 设置全站共享背景音乐；null 清空选择。重复选择无副作用。要求 CSRF。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [trackId]
+              properties:
+                trackId: { type: string, format: uuid, nullable: true }
+      responses:
+        "200":
+          description: 设置成功后的共享快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MusicSnapshot" }
+        "401": { description: 请先登录 }
+        "403": { description: CSRF 令牌无效 }
+        "404": { description: 歌曲不存在或已删除 }
+  /music/tracks/{id}:
+    delete:
+      description: 双方均可删除；当前歌曲被删除时同时清空选择。要求 CSRF。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200":
+          description: 删除成功后的共享快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MusicSnapshot" }
+        "401": { description: 请先登录 }
+        "403": { description: CSRF 令牌无效 }
+        "404": { description: 歌曲不存在或已删除 }
+  /music/tracks/{id}/content:
+    get:
+      description: 私有同源音频流；每次请求（包括 Range）校验会话，禁止缓存。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+        - { name: Range, in: header, schema: { type: string }, description: HTTP 字节范围 }
+      responses:
+        "200":
+          description: 完整音频
+          headers:
+            Cache-Control: { schema: { type: string }, description: "private, no-store" }
+            Accept-Ranges: { schema: { type: string }, description: bytes }
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+            audio/wav:
+              schema: { type: string, format: binary }
+        "206":
+          description: 有效的字节范围
+          headers:
+            Content-Range: { schema: { type: string } }
+          content:
+            audio/mpeg:
+              schema: { type: string, format: binary }
+            audio/wav:
+              schema: { type: string, format: binary }
+        "401": { description: 请先登录 }
+        "404": { description: 歌曲不存在或已删除 }
+        "416": { description: 字节范围无效 }
+    head:
+      description: 与 GET 相同的鉴权和音频元数据，无响应正文。
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      responses:
+        "200": { description: 音频元数据 }
+        "401": { description: 请先登录 }
+        "404": { description: 歌曲不存在或已删除 }
   /account/profile:
     get:
       responses:
@@ -348,6 +596,64 @@ components:
   securitySchemes:
     session: { type: apiKey, in: cookie, name: SESSION }
   schemas:
+    PlaceImageVariant:
+      type: object
+      required: [url, width, height]
+      properties:
+        url: { type: string, description: 同源鉴权图片 URL }
+        width: { type: integer, minimum: 1, description: 文件真实宽度，不是目标档位 }
+        height: { type: integer, minimum: 1 }
+    PlaceImage:
+      type: object
+      required: [url, version, width, height, variants]
+      properties:
+        url: { type: string, description: 默认1920档预览 URL；包含 w 与 v 参数 }
+        version: { type: string, format: uuid, description: 仅换图时变化 }
+        width: { type: integer, nullable: true, description: 源图宽；旧图尚未派生时为 null }
+        height: { type: integer, nullable: true, description: 源图高；旧图尚未派生时为 null }
+        variants: { type: array, items: { $ref: "#/components/schemas/PlaceImageVariant" }, description: 已知实际尺寸，不放大、不重复；旧图首次派生前为空 }
+    Place:
+      type: object
+      required: [id, city, visitDate, description, sortOrder, image]
+      properties:
+        id: { type: string, format: uuid }
+        city: { type: string, maxLength: 100 }
+        visitDate: { type: string, format: date, nullable: true }
+        description: { type: string, maxLength: 500 }
+        sortOrder: { type: integer }
+        image: { $ref: "#/components/schemas/PlaceImage" }
+    PlaceInput:
+      type: object
+      required: [city]
+      properties:
+        city: { type: string, minLength: 1, maxLength: 100 }
+        visitDate: { type: string, format: date, nullable: true }
+        description: { type: string, maxLength: 500 }
+        panoramaImage: { type: string, nullable: true, maxLength: 8000000, description: 新建必填有效 data URL；编辑省略/null保留，空串拒绝；不接受资源URL }
+    MusicTrack:
+      type: object
+      required: [id, title, contentType, byteSize, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, maxLength: 120 }
+        contentType: { type: string, enum: [audio/mpeg, audio/wav] }
+        byteSize: { type: integer, format: int64, minimum: 1 }
+        createdAt: { type: string, format: date-time }
+    MusicLimits:
+      type: object
+      required: [maxFileBytes, maxTracks, maxTotalBytes]
+      properties:
+        maxFileBytes: { type: integer, format: int64, default: 20971520 }
+        maxTracks: { type: integer, default: 20 }
+        maxTotalBytes: { type: integer, format: int64, default: 209715200 }
+    MusicSnapshot:
+      type: object
+      required: [tracks, selectedTrackId, revision, limits]
+      properties:
+        tracks: { type: array, items: { $ref: "#/components/schemas/MusicTrack" } }
+        selectedTrackId: { type: string, format: uuid, nullable: true }
+        revision: { type: integer, format: int64, minimum: 0 }
+        limits: { $ref: "#/components/schemas/MusicLimits" }
     AccountProfile:
       type: object
       required: [id, username, nickname, role]

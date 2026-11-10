@@ -8,6 +8,7 @@ class SecurityBoundaryTest {
  @MockitoBean MemoryService service;
  @MockitoBean AccountRepository accounts;
  @MockitoBean PlaceRepository places;
+ @MockitoBean PlaceService placeService;
  @MockitoBean PrivacyService privacy;
  @Test void anonymousCannotReadActivity()throws Exception{mvc.perform(get("/api/v1/activities")).andExpect(status().isUnauthorized());}
  @Test void markingActivitiesRequiresCsrf()throws Exception{mvc.perform(post("/api/v1/activities/1/read").with(user("one"))).andExpect(status().isForbidden());}

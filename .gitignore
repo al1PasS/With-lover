@@ -1,3 +1,7 @@
+# Local editor and macOS metadata
+.DS_Store
+.idea/
+
 node_modules/
 dist/
 target/
@@ -6,6 +10,8 @@ target/
 *.log
 *.tsbuildinfo
 frontend/test-results/
+e2e/screenshots/
 frontend/playwright-report/
 backups/
+backend/media/
 SERVER_TODO.md

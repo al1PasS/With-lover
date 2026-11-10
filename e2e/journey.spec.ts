@@ -6,7 +6,7 @@ test("desktop public browsing and demo record lifecycle", async ({ page }) => {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /把我们/ })).toBeVisible();
   await page.screenshot({
-    path: "../e2e/screenshots/desktop.png",
+    path: test.info().outputPath("desktop.png"),
     fullPage: true,
     animations: "disabled",
   });
@@ -33,7 +33,7 @@ test("desktop public browsing and demo record lifecycle", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "切换深色" }).click();
   await page.screenshot({
-    path: "../e2e/screenshots/dark.png",
+    path: test.info().outputPath("dark.png"),
     fullPage: true,
     animations: "disabled",
   });
@@ -46,7 +46,7 @@ test("mobile navigation, search, lightbox and reduced motion", async ({
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");
   await page.screenshot({
-    path: "../e2e/screenshots/mobile.png",
+    path: test.info().outputPath("mobile.png"),
     fullPage: true,
     animations: "disabled",
   });

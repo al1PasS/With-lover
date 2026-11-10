@@ -27,7 +27,7 @@ test('personal dates and visible mobile add buttons',async({page})=>{
  await expect(page.getByLabel('相册名称')).toBeVisible();
  await page.keyboard.press('Escape');
  await page.getByRole('navigation',{name:'手机导航'}).getByRole('link',{name:'时光'}).click();
- await page.screenshot({path:'../e2e/screenshots/mobile-add-fixed.png',animations:'disabled'});
+ await page.screenshot({path:test.info().outputPath('mobile-add-fixed.png'),animations:'disabled'});
  await page.goto('/anniversaries');
  for(const text of ['2026 年 5 月 13 日','2026 年 6 月 19 日','2026 年 9 月 12 日','农历七月初八','公历 1 月 30 日','农历腊月廿八'])await expect(page.getByText(text,{exact:false})).toBeVisible();
  await expect(page.locator('.anniv-days').first()).toContainText('已经');
