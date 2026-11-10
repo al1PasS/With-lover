@@ -420,18 +420,17 @@ export function PlaceCard({
       </div>
       <div className="place-paper">
         <div className="place-caption">
-          <div className="place-caption-heading">
-            <h2 id={titleId}>{place.city}</h2>
-            {place.visitDate && (
-              <time dateTime={place.visitDate}>
-                {place.visitDate.replaceAll("-", ".")}
-              </time>
-            )}
-          </div>
-          {place.description && <p>{place.description}</p>}
+          <h2 id={titleId}>{place.city}</h2>
+          {place.visitDate && (
+            <time dateTime={place.visitDate}>
+              {place.visitDate.replaceAll("-", ".")}
+            </time>
+          )}
+          {place.description && (
+            <p title={place.description}>{place.description}</p>
+          )}
         </div>
         <div className="place-card-footer">
-          <span className="place-scroll-hint">完整长卷 · 展开看细节</span>
           <Dialog.Root open={open} onOpenChange={setOpen}>
             <Dialog.Trigger asChild>
               <button

@@ -1,3 +1,13 @@
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
 let csrf: { token: string; headerName: string } | undefined;
 let sessionGeneration = 0;
 export async function request<T>(
@@ -30,7 +40,10 @@ export async function request<T>(
     const data = await response
       .json()
       .catch(() => ({ message: "连接暂时失败，请稍后重试" }));
-    throw new Error(data.message || `请求失败 (${response.status})`);
+    throw new ApiError(
+      data.message || `请求失败 (${response.status})`,
+      response.status,
+    );
   }
   if (
     options.method &&

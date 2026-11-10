@@ -149,6 +149,69 @@ class MusicIntegrationTest {
         assertEquals(409,assertThrows(org.springframework.web.server.ResponseStatusException.class,()->upload("溢出")).getStatusCode().value());
         assertEquals(10,music.snapshot().tracks().size()); assertEquals(1,events());
     }
+    @Test void publicMusicTracksOnlyTheCurrentSelectionAndPrivateModeRevokesEveryRequest() throws Exception {
+        List<String> previous = db.queryForList("SELECT setting_value FROM site_settings WHERE setting_key='privacy'", String.class);
+        try {
+            UUID first = upload("公开当前曲"), second = upload("私有曲库曲");
+            // No page module needs to be enabled for SELECTED-mode background music.
+            publicPolicy("SELECTED");
+            SecurityContextHolder.clearContext();
+            mvc.perform(get("/api/v1/public/music")).andExpect(status().isOk())
+                    .andExpect(content().json("{\"selectedTrackId\":null,\"revision\":2}", org.springframework.test.json.JsonCompareMode.STRICT))
+                    .andExpect(header().string("Cache-Control", "private, no-store"));
+            for (UUID id : List.of(first, second, UUID.randomUUID()))
+                mvc.perform(get(publicUrl(id)).header("Range", "garbage")).andExpect(status().isNotFound());
+            mvc.perform(put("/api/v1/music/selection").with(user("activity-two")).with(csrf()).contentType("application/json")
+                    .content("{\"trackId\":\""+first+"\"}")).andExpect(status().isOk());
+            mvc.perform(get("/api/v1/public/music")).andExpect(status().isOk())
+                    .andExpect(content().json("{\"selectedTrackId\":\""+first+"\",\"revision\":3}", org.springframework.test.json.JsonCompareMode.STRICT));
+            mvc.perform(get(publicUrl(first))).andExpect(status().isOk()).andExpect(content().bytes(MusicFixtures.wav()))
+                    .andExpect(header().string("Cache-Control", "private, no-store"));
+            mvc.perform(get(publicUrl(first)).header("Range", "bytes=0-9")).andExpect(status().isPartialContent())
+                    .andExpect(content().bytes(Arrays.copyOf(MusicFixtures.wav(), 10)));
+            mvc.perform(head(publicUrl(first)).header("Range", "bytes=0-9")).andExpect(status().isPartialContent())
+                    .andExpect(content().string(""));
+            mvc.perform(get(publicUrl(second)).with(user("activity-one")).header("Range", "garbage"))
+                    .andExpect(status().isNotFound()).andExpect(header().doesNotExist("Content-Range"));
+            mvc.perform(get("/api/v1/music/tracks/"+second+"/content").with(user("activity-one")))
+                    .andExpect(status().isOk()); // The unselected library remains available only through private member routes.
+            mvc.perform(put("/api/v1/music/selection").with(user("activity-one")).with(csrf()).contentType("application/json")
+                    .content("{\"trackId\":\""+second+"\"}")).andExpect(status().isOk());
+            for (var request : List.of(get(publicUrl(first)), head(publicUrl(first))))
+                mvc.perform(request.header("Range", "garbage").header("If-None-Match", "*"))
+                        .andExpect(status().isNotFound()).andExpect(header().string("Cache-Control", "private, no-store"));
+            mvc.perform(get(publicUrl(second)).header("Range", "bytes=-10")).andExpect(status().isPartialContent());
+            publicPolicy("PRIVATE");
+            mvc.perform(get("/api/v1/public/music")).andExpect(status().isForbidden())
+                    .andExpect(header().string("Cache-Control", "private, no-store"));
+            for (var request : List.of(get(publicUrl(second)), head(publicUrl(second))))
+                mvc.perform(request.header("Range", "garbage").header("If-None-Match", "*"))
+                        .andExpect(status().isForbidden()).andExpect(header().string("Cache-Control", "private, no-store"));
+            publicPolicy("SELECTED");
+            mvc.perform(get(publicUrl(second))).andExpect(status().isOk());
+            mvc.perform(put("/api/v1/music/selection").with(user("activity-one")).with(csrf()).contentType("application/json")
+                    .content("{\"trackId\":null}")).andExpect(status().isOk());
+            mvc.perform(get(publicUrl(second)).header("Range", "bytes=0-9")).andExpect(status().isNotFound());
+            mvc.perform(get("/api/v1/public/music")).andExpect(status().isOk())
+                    .andExpect(content().json("{\"selectedTrackId\":null,\"revision\":5}", org.springframework.test.json.JsonCompareMode.STRICT));
+            mvc.perform(put("/api/v1/music/selection").with(user("activity-one")).with(csrf()).contentType("application/json")
+                    .content("{\"trackId\":\""+second+"\"}")).andExpect(status().isOk());
+            mvc.perform(delete("/api/v1/music/tracks/"+second).with(user("activity-two")).with(csrf())).andExpect(status().isOk());
+            mvc.perform(get(publicUrl(second))).andExpect(status().isNotFound());
+            mvc.perform(get("/api/v1/public/music")).andExpect(status().isOk())
+                    .andExpect(content().json("{\"selectedTrackId\":null,\"revision\":7}", org.springframework.test.json.JsonCompareMode.STRICT));
+        } finally {
+            if (previous.isEmpty()) db.update("DELETE FROM site_settings WHERE setting_key='privacy'");
+            else db.update("UPDATE site_settings SET setting_value=? WHERE setting_key='privacy'", previous.getFirst());
+        }
+    }
+    private String publicUrl(UUID id) { return "/api/v1/public/music/tracks/"+id+"/content"; }
+    private void publicPolicy(String mode) {
+        db.update("""
+                INSERT INTO site_settings(setting_key,setting_value) VALUES ('privacy',?)
+                ON CONFLICT (setting_key) DO UPDATE SET setting_value=EXCLUDED.setting_value
+                """, "{\"mode\":\""+mode+"\",\"home\":false,\"timeline\":false,\"anniversaries\":false,\"albums\":false,\"places\":false}");
+    }
     @Test void authenticatedContentRangesAndMemberWritesWorkThroughRealServices() throws Exception {
         SecurityContextHolder.clearContext();
         mvc.perform(get("/api/v1/music")).andExpect(status().isUnauthorized());

@@ -10,7 +10,8 @@ import {
 // synchronization are deliberately covered separately in music-real.spec.ts.
 async function enterDemo(page: Page) {
   await page.goto("/");
-  await expect(musicToggle(page)).toHaveCount(0);
+  await expect(musicToggle(page)).toBeVisible();
+  await expect(musicToggle(page)).toBeDisabled();
   await page.getByRole("button", { name: "进入我们的小世界", exact: true }).click();
   await page.getByRole("button", { name: "进入示例空间", exact: true }).click();
   await page.getByRole("link", { name: "管理我们的空间", exact: true }).click();
@@ -150,7 +151,8 @@ test("local off survives a selection change, logout clears audio, and demo files
   await startMusicIfBlocked(page);
   const audio = await musicAudio(page).elementHandle();
   await page.getByRole("button", { name: "退出登录", exact: true }).click();
-  await expect(musicToggle(page)).toHaveCount(0);
+  await expect(musicToggle(page)).toBeVisible();
+  await expect(musicToggle(page)).toBeDisabled();
   await expect.poll(() => audio!.evaluate((element: HTMLAudioElement) => element.paused && !element.getAttribute("src"))).toBe(true);
   await page.reload();
   await page.getByRole("button", { name: "进入我们的小世界", exact: true }).click();

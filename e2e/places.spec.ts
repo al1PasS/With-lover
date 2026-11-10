@@ -73,7 +73,7 @@ async function centered(scroll: Locator) {
     )
     .toBeLessThanOrEqual(2);
 }
-async function completeBanner(card: Locator) {
+async function completeBanner(card: Locator, expectedRatio = 7) {
   const viewport = card.locator(".place-panorama-scroll");
   const image = card.locator("img.place-panorama");
   await image.scrollIntoViewIfNeeded();
@@ -102,17 +102,17 @@ async function completeBanner(card: Locator) {
   });
   expect(
     geometry.viewportRatio,
-    "the full card banner is about 7:1",
-  ).toBeCloseTo(7, 1);
+    `the full card banner is about ${expectedRatio}:1`,
+  ).toBeCloseTo(expectedRatio, 1);
   expect(
     geometry.frameRatio,
     "the image frame retains the complete panorama",
-  ).toBeCloseTo(7, 1);
+  ).toBeCloseTo(expectedRatio, 1);
   expect(
     geometry.imageRatio,
-    "the actual img CSS box is about 7:1",
-  ).toBeCloseTo(7, 1);
-  expect(geometry.naturalRatio).toBeCloseTo(7, 1);
+    `the actual img CSS box is about ${expectedRatio}:1`,
+  ).toBeCloseTo(expectedRatio, 1);
+  expect(geometry.naturalRatio).toBeCloseTo(expectedRatio, 1);
   expect(geometry.objectFit, "do not crop or stretch the panorama").toBe(
     "contain",
   );
@@ -136,21 +136,167 @@ async function completeBanner(card: Locator) {
     ).toBeLessThanOrEqual(1);
 }
 async function managementOutsideImage(card: Locator) {
-  const image = await card.locator(".place-panorama-scroll").boundingBox();
   const buttons = card.locator(".place-admin-actions button");
   await expect(buttons).toHaveCount(4);
-  for (const button of await buttons.all()) {
-    const box = await button.boundingBox();
-    expect(box!.width, "management touch width").toBeGreaterThanOrEqual(44);
-    expect(box!.height, "management touch height").toBeGreaterThanOrEqual(44);
+  const geometry = await card.evaluate((element) => {
+    const bounds = (selector: string) =>
+      element
+        .querySelector<HTMLElement>(selector)!
+        .getBoundingClientRect()
+        .toJSON();
+    const description = element.querySelector<HTMLElement>(".place-caption p")!;
+    const descriptionStyle = getComputedStyle(description);
+    return {
+      desktop: matchMedia("(min-width: 768px)").matches,
+      tablet: matchMedia("(min-width: 768px) and (max-width: 1023px)").matches,
+      card: element.getBoundingClientRect().toJSON(),
+      image: bounds(".place-panorama-scroll"),
+      caption: bounds(".place-caption"),
+      title: bounds(".place-caption h2"),
+      date: bounds(".place-caption time"),
+      description: description.getBoundingClientRect().toJSON(),
+      descriptionStyle: {
+        whiteSpace: descriptionStyle.whiteSpace,
+        overflow: descriptionStyle.overflow,
+        textOverflow: descriptionStyle.textOverflow,
+      },
+      expand: bounds(".place-expand"),
+      management: bounds(".place-admin-actions"),
+      buttons: Array.from(
+        element.querySelectorAll<HTMLElement>(".place-admin-actions button"),
+        (button) => button.getBoundingClientRect().toJSON(),
+      ),
+    };
+  });
+  const { image, caption, expand, management } = geometry;
+  await expect(card).toHaveAccessibleName(
+    (await card.locator("h2").textContent())!,
+  );
+  expect(
+    geometry.title.width,
+    "city remains an accessibility-only title",
+  ).toBeLessThanOrEqual(1);
+  expect(
+    geometry.title.height,
+    "city must not add a visible heading row",
+  ).toBeLessThanOrEqual(1);
+  expect(expand.width, "expand touch width").toBeGreaterThanOrEqual(44);
+  expect(expand.height, "expand touch height").toBeGreaterThanOrEqual(44);
+  for (const box of geometry.buttons) {
+    expect(box.width, "management touch width").toBeGreaterThanOrEqual(44);
+    expect(box.height, "management touch height").toBeGreaterThanOrEqual(44);
+    if (geometry.desktop) {
+      expect(
+        box.top,
+        "desktop management overlays the image",
+      ).toBeGreaterThanOrEqual(image.top - 1);
+      expect(
+        box.bottom,
+        "desktop management stays inside the image",
+      ).toBeLessThanOrEqual(image.bottom + 1);
+      expect(box.left).toBeGreaterThanOrEqual(image.left - 1);
+      expect(box.right).toBeLessThanOrEqual(image.right + 1);
+      expect(
+        box.bottom <= expand.top + 1 ||
+          box.top >= expand.bottom - 1 ||
+          box.right <= expand.left + 1 ||
+          box.left >= expand.right - 1,
+        "desktop management and expand touch targets must not overlap",
+      ).toBe(true);
+    } else {
+      expect(
+        box.top,
+        "mobile management must not cover the panorama",
+      ).toBeGreaterThanOrEqual(image.bottom - 1);
+    }
+  }
+  if (geometry.desktop) {
     expect(
-      box!.y,
-      "management controls must sit below, not overlay, the panorama",
-    ).toBeGreaterThanOrEqual(image!.y + image!.height);
+      Math.abs(geometry.card.height - image.height),
+      "desktop card has no extra paper height below the panorama (allow borders)",
+    ).toBeLessThanOrEqual(2);
+    expect(
+      caption.top,
+      "desktop caption overlays the image",
+    ).toBeGreaterThanOrEqual(image.top - 1);
+    expect(caption.bottom).toBeLessThanOrEqual(image.bottom + 1);
+    expect(
+      image.bottom - caption.bottom,
+      "desktop caption sits at the bottom",
+    ).toBeLessThanOrEqual(16);
+    expect(
+      management.top - image.top,
+      "desktop management sits at the top right",
+    ).toBeLessThanOrEqual(16);
+    expect(image.right - management.right).toBeLessThanOrEqual(16);
+    expect(expand.top).toBeGreaterThanOrEqual(image.top - 1);
+    expect(expand.bottom).toBeLessThanOrEqual(image.bottom + 1);
+    if (geometry.tablet) {
+      expect(
+        expand.top - image.top,
+        "tablet expand sits in the top control row",
+      ).toBeLessThanOrEqual(16);
+      expect(
+        expand.right,
+        "tablet expand sits to the left of management, not beneath it",
+      ).toBeLessThanOrEqual(management.left);
+    } else {
+      expect(
+        image.bottom - expand.bottom,
+        "desktop expand sits at the bottom right",
+      ).toBeLessThanOrEqual(16);
+      expect(image.right - expand.right).toBeLessThanOrEqual(16);
+    }
+  } else {
+    expect(
+      caption.top,
+      "mobile caption sits below the complete image",
+    ).toBeGreaterThanOrEqual(image.bottom - 1);
+    expect(
+      expand.top - image.bottom,
+      "the 44px mobile caption/expand row starts immediately below the image",
+    ).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(
+        (caption.top + caption.bottom) / 2 - (expand.top + expand.bottom) / 2,
+      ),
+      "caption text is vertically centered in its compact touch row",
+    ).toBeLessThanOrEqual(1);
+    expect(
+      caption.height,
+      "mobile caption occupies only one compact row",
+    ).toBeLessThanOrEqual(44);
+    expect(geometry.date.top).toBeLessThan(geometry.description.bottom);
+    expect(
+      geometry.description.top,
+      "date and description share one line",
+    ).toBeLessThan(geometry.date.bottom);
+    expect(geometry.descriptionStyle).toEqual({
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    });
+    expect(expand.top).toBeGreaterThanOrEqual(image.bottom - 1);
+    expect(expand.top, "expand shares the caption row").toBeLessThan(
+      caption.bottom,
+    );
+    expect(caption.top).toBeLessThan(expand.bottom);
+    expect(
+      management.top,
+      "mobile management gets its own compact row",
+    ).toBeGreaterThanOrEqual(expand.bottom - 1);
+    expect(
+      management.height,
+      "management row has no large padding",
+    ).toBeLessThanOrEqual(48);
+    expect(
+      geometry.card.height - image.height,
+      "mobile content outside the image stays within 100px",
+    ).toBeLessThanOrEqual(100);
   }
 }
 async function captureScreenshot(page: Page, name: string) {
-  // Per-run artifacts stay in ignored test-results; curated examples are kept separately.
+  // Screenshots are per-run artifacts in ignored test-results only.
   const path = test.info().outputPath(`places-banner-${name}.png`);
   await page.screenshot({ path, animations: "disabled" });
 }
@@ -292,6 +438,70 @@ for (const layout of layouts) {
     await noOverflow(page);
   });
 }
+
+test("tablet-768: true 8:1 banner keeps complete image and separate 44px overlay controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
+  const api = await setup(page);
+  // Change both the contract dimensions and actual decoded pixels, not just CSS metadata.
+  const first = api.places[0];
+  const width = 1920;
+  const height = width / 8;
+  first.image = {
+    ...first.image,
+    width,
+    height,
+    // A single src avoids density-corrected naturalWidth/Height integer rounding
+    // from a one-candidate srcset; the browser decodes the exact 1920×240 pixels.
+    variants: [],
+  };
+  const picture = await page.evaluate(
+    ({ width, height }) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#b6ced0";
+      context.fillRect(0, 0, width, height);
+      context.fillStyle = "#4c776e";
+      context.beginPath();
+      context.moveTo(0, height);
+      for (let x = 0; x <= width; x += 4)
+        context.lineTo(x, height * (0.58 + Math.sin(x / 90) * 0.12));
+      context.lineTo(width, height);
+      context.closePath();
+      context.fill();
+      return canvas.toDataURL("image/png").split(",")[1];
+    },
+    { width, height },
+  );
+  await page.route(`**/api/v1/media/places/${first.id}?*`, (route) =>
+    route.fulfill({
+      contentType: "image/png",
+      body: Buffer.from(picture, "base64"),
+      headers: { "Cache-Control": "no-store" },
+    }),
+  );
+  await page.goto("/places");
+  await ready(page);
+  const card = page.locator(".custom-place").first();
+  await completeBanner(card, 8);
+  await managementOutsideImage(card);
+  await expect(card.locator("img.place-panorama")).toHaveJSProperty(
+    "naturalWidth",
+    width,
+  );
+  await expect(card.locator("img.place-panorama")).toHaveJSProperty(
+    "naturalHeight",
+    height,
+  );
+  await noOverflow(page);
+  expect(listCalls(api)).toHaveLength(1);
+  expect(readerCalls(api)).toHaveLength(0);
+  await captureScreenshot(page, "tablet-768-eight-to-one");
+});
 
 test("text-only edit preserves the complete image; PNG replacement sends only the chosen image", async ({
   page,

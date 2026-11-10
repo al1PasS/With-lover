@@ -16,7 +16,7 @@ class SecurityConfig {
  @Bean SecurityContextRepository contextRepository(){return new HttpSessionSecurityContextRepository();}
  @Bean SecurityFilterChain chain(HttpSecurity http,SecurityContextRepository contexts,@org.springframework.beans.factory.annotation.Value("${shiguang.music.max-concurrent-uploads:2}") int musicUploads)throws Exception{
   http.addFilterBefore(new MusicUploadFilter(musicUploads),CsrfFilter.class);
-  http.authorizeHttpRequests(a->a.requestMatchers(HttpMethod.GET,"/actuator/health","/api/v1/public/**","/api/v1/auth/csrf","/api/v1/auth/me").permitAll().requestMatchers(HttpMethod.POST,"/api/v1/auth/login").permitAll().requestMatchers("/api/v1/admin/**").hasRole("ADMIN").anyRequest().authenticated());
+  http.authorizeHttpRequests(a->a.requestMatchers(HttpMethod.GET,"/actuator/health","/api/v1/public/**","/api/v1/auth/csrf","/api/v1/auth/me").permitAll().requestMatchers(HttpMethod.HEAD,"/api/v1/public/music/tracks/{trackId}/content").permitAll().requestMatchers(HttpMethod.POST,"/api/v1/auth/login").permitAll().requestMatchers("/api/v1/admin/**").hasRole("ADMIN").anyRequest().authenticated());
   http.securityContext(c->c.securityContextRepository(contexts));
   http.csrf(c->c.csrfTokenRepository(new HttpSessionCsrfTokenRepository()));
   http.requestCache(c->c.disable()).formLogin(c->c.disable()).httpBasic(c->c.disable());

@@ -40,7 +40,7 @@
 
 ## 背景音乐（2026-11-10）
 - `Music.tsx` / `musicState.ts` 提供全局播放器与双方可见的管理面板。曲库和全站选曲由后端共享；开关仅当前页面会话有效、默认开启，自动播放受阻需点击。实际播放才旋转图标，关闭显示斜杠；路由切换不重建音频。
-- V9 新增 `music_tracks` / 单行 `music_state`。接口为 `GET /api/v1/music`、上传/删除 `/music/tracks`、`PUT /music/selection` 和鉴权 `/music/tracks/{id}/content`。全体成员可管理；无公开音乐接口，写接口要求 CSRF。快照 revision 单调增加，页面可见时每 15 秒同步，换歌保留各自开关。
+- V9 新增 `music_tracks` / 单行 `music_state`。私有接口为 `GET /api/v1/music`、上传/删除 `/music/tracks`、`PUT /music/selection` 和鉴权 `/music/tracks/{id}/content`。全体成员可管理，写接口要求 CSRF。访客按钮始终显示；SELECTED 模式通过 `/public/music` 仅获取当前选曲 ID/revision，通过 `/public/music/tracks/{id}/content` GET/HEAD/Range 仅播放当前选曲；无公开曲库或写入口，PRIVATE 全站否决，不依赖其他模块开关。每次公开流请求重新检查模式和当前选曲，全部 no-store。页面可见时每 15 秒同步，权限撤销即使 revision 未变也清源，换歌保留各自开关。
 - MP3 Layer III / 标准 PCM WAV，最大 20 MiB/首、20 首、200 MiB；服务端校验实际结构。音频位于 `MEDIA_ROOT/music`，随机文件名、私有流式 Range 读取，不写 base64 设置或浏览器持久化。Compose 配置 `/app/media`，本地默认 `./media`。
 - 曲库写操作、选曲及动态在相同事务内，统一锁定单行状态；上传回滚清理，删除提交后清理，音乐专属目录宽限期孤儿清理。不得把媒体目录直接公开，也不得以清理音乐为由处理其他文件。
 - 演示音乐只在当前页面内存保存，刷新/退出即清空。真实浏览器测试 `MUSIC_REAL_TEST=true npx playwright test music-real.spec.ts` 仅指向独立 5174/API/测试数据库，使用合成账号与音频，不能指向已有双人空间。媒体必须与数据库做配套备份，现有 `scripts/backup.sh` 单独只备份数据库。

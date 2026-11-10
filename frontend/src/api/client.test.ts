@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { request, resetCsrf } from "./client";
+import { ApiError, request, resetCsrf } from "./client";
 
 const fetchMock = vi.fn<typeof fetch>();
 const events = new EventTarget();
@@ -20,6 +20,23 @@ afterEach(() => {
 });
 
 describe("API upload and session handling", () => {
+  it("exposes permission status so public music can clear revoked audio without expiring a session", async () => {
+    fetchMock.mockResolvedValueOnce(
+      json({ message: "这一部分暂时只留给登录后的我们" }, 403),
+    );
+    const expired = vi.fn();
+    events.addEventListener("shiguang:auth-expired", expired);
+    const error = await request("/public/music").catch(
+      (error: unknown) => error,
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect(error).toMatchObject({
+      status: 403,
+      message: "这一部分暂时只留给登录后的我们",
+    });
+    expect(expired).not.toHaveBeenCalled();
+    events.removeEventListener("shiguang:auth-expired", expired);
+  });
   it("leaves multipart boundary to the browser while retaining CSRF and credentials", async () => {
     fetchMock.mockResolvedValueOnce(
       json({ token: "test-token", headerName: "X-CSRF-TOKEN" }),
