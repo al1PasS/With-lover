@@ -517,6 +517,237 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/music": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description 访客只读取当前背景歌曲 ID 与递增 revision，不返回曲库、标题、上传者、文件路径或容量限制。 每次检查访客模式：PRIVATE 全站否决；SELECTED 允许当前曲，独立于首页、时光等模块开关。 未选曲时 selectedTrackId 为 null。成功与错误均 no-store，不处理缓存条件或返回 304。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前背景音乐的最小公开快照 */
+                200: {
+                    headers: {
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["PublicMusicSnapshot"];
+                    };
+                };
+                /** @description PRIVATE 模式或无效访客设置，不公开音乐；no-store */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/music/tracks/{id}/content": {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description 单一 HTTP 字节范围，支持后缀范围；不支持多段范围 */
+                Range?: string;
+            };
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description 只公开当前选中的背景歌曲，曲库及管理仍需登录、写操作仍需 CSRF。 每次 GET（包括 Range）先检查访客模式，再用 SQL JOIN 限定当前 selection 才读取资源，最后处理 Range； PRIVATE 返回 403，非当前、已删除或不存在的歌曲统一 404，不能由无效 Range 或缓存条件绕过。 SELECTED 下独立于页面模块开关。所有响应 no-store，不返回 304。 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 单一 HTTP 字节范围，支持后缀范围；不支持多段范围 */
+                    Range?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前背景歌曲完整音频 */
+                200: {
+                    headers: {
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        /** @description bytes */
+                        "Accept-Ranges"?: string;
+                        /** @description 固定 inline 文件名，不公开原文件名 */
+                        "Content-Disposition"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": string;
+                        "audio/wav": string;
+                    };
+                };
+                /** @description 当前背景歌曲的有效字节范围 */
+                206: {
+                    headers: {
+                        "Content-Range"?: string;
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        /** @description bytes */
+                        "Accept-Ranges"?: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "audio/mpeg": string;
+                        "audio/wav": string;
+                    };
+                };
+                /** @description 音乐 ID 格式无效；no-store */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description PRIVATE 模式或无效访客设置；优先于 ID、Range 和缓存条件；no-store */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲非当前、未选曲、已删除或不存在；优先于 Range；no-store */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 当前歌曲可访问，但字节范围无效；no-store */
+                416: {
+                    headers: {
+                        /** @description bytes *\/文件长度 */
+                        "Content-Range"?: string;
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 音乐存储暂时不可用；no-store */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        /** @description 与公开 GET 相同的逐请求访客模式、当前 selection JOIN 及 Range 校验；无响应正文，所有响应 no-store。仅此新内容路径放行匿名 HEAD，不放宽私有接口。 */
+        head: {
+            parameters: {
+                query?: never;
+                header?: {
+                    /** @description 单一 HTTP 字节范围，支持后缀范围；不支持多段范围 */
+                    Range?: string;
+                };
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 当前背景歌曲元数据，无正文 */
+                200: {
+                    headers: {
+                        "Content-Type"?: "audio/mpeg" | "audio/wav";
+                        "Content-Length"?: number;
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        /** @description bytes */
+                        "Accept-Ranges"?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 当前背景歌曲的有效字节范围元数据，无正文 */
+                206: {
+                    headers: {
+                        "Content-Range"?: string;
+                        "Content-Length"?: number;
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 音乐 ID 格式无效；no-store */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description PRIVATE 模式或无效访客设置；no-store */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 歌曲非当前、未选曲、已删除或不存在；no-store */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 当前歌曲可访问，但字节范围无效；no-store */
+                416: {
+                    headers: {
+                        /** @description bytes *\/文件长度 */
+                        "Content-Range"?: string;
+                        /** @description private, no-store */
+                        "Cache-Control"?: string;
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 音乐存储暂时不可用；no-store */
+                503: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        patch?: never;
+        trace?: never;
+    };
     "/music": {
         parameters: {
             query?: never;
@@ -1990,6 +2221,13 @@ export interface components {
              */
             maxTotalBytes: number;
         };
+        /** @description 仅公开当前歌曲的标识与 revision；不包含曲库元数据。授权仅限当前选曲，换歌、清空或删除后旧内容 URL 即失效。 */
+        PublicMusicSnapshot: {
+            /** Format: uuid */
+            selectedTrackId: string | null;
+            /** Format: int64 */
+            revision: number;
+        };
         MusicSnapshot: {
             tracks: components["schemas"]["MusicTrack"][];
             /** Format: uuid */
@@ -2032,6 +2270,7 @@ export interface components {
             /** Format: int64 */
             nextCursor: number | null;
         };
+        /** @description PRIVATE 否决所有访客内容（含音乐）；SELECTED 按模块开关开放页面内容，当前背景歌曲独立于这些开关允许访客读取，不公开曲库。 */
         PrivacyPolicy: {
             /** @enum {string} */
             mode: "PRIVATE" | "SELECTED";

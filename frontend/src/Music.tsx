@@ -17,7 +17,7 @@ import {
   X,
   ArrowClockwise,
 } from "@phosphor-icons/react";
-import { request } from "./api/client";
+import { ApiError, request } from "./api/client";
 import { clearDemoMusicActivities, demoActivity } from "./Activity";
 import {
   BackgroundPlayer,
@@ -120,12 +120,13 @@ class DemoMusic {
   }
 }
 
-export function useBackgroundMusic(user: string | null) {
+export function useBackgroundMusic(user: string | null, ready = true) {
   const signedIn = Boolean(user);
   const audioRef = useRef<HTMLAudioElement>(null);
   const controller = useRef<BackgroundPlayer | null>(null);
   const demoLibrary = useRef<DemoMusic | null>(null);
   const generation = useRef(0);
+  const refreshSequence = useRef(0);
   const active = useRef(false);
   const pending = useRef(false);
   const snapshotRef = useRef<MusicSnapshot>(emptyMusic());
@@ -136,38 +137,69 @@ export function useBackgroundMusic(user: string | null) {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
-  const apply = useCallback((next: MusicSnapshot) => {
-    const accepted = newerMusic(snapshotRef.current, next);
-    if (accepted === snapshotRef.current) return;
-    snapshotRef.current = accepted;
-    setSnapshot(accepted);
-    const id = accepted.selectedTrackId;
-    const track = accepted.tracks.find((track) => track.id === id);
-    controller.current?.setSource(
-      track
-        ? demo
-          ? demoLibrary.current?.source(track.id) || ""
-          : `/api/v1/music/tracks/${encodeURIComponent(track.id)}/content`
-        : "",
-    );
-  }, []);
+  const apply = useCallback(
+    (next: MusicSnapshot) => {
+      const accepted = newerMusic(snapshotRef.current, next);
+      if (accepted === snapshotRef.current) return;
+      snapshotRef.current = accepted;
+      setSnapshot(accepted);
+      const id = accepted.selectedTrackId;
+      controller.current?.setSource(
+        id
+          ? demo
+            ? demoLibrary.current?.source(id) || ""
+            : `/api/v1/${signedIn ? "music" : "public/music"}/tracks/${encodeURIComponent(id)}/content`
+          : "",
+      );
+    },
+    [signedIn],
+  );
   const refresh = useCallback(async () => {
     if (!active.current) return;
     const token = generation.current;
+    const sequence = ++refreshSequence.current;
     try {
       const next = demo
         ? demoLibrary.current!.snapshot
-        : await request<MusicSnapshot>("/music");
-      if (token !== generation.current || !active.current) return;
+        : signedIn
+          ? await request<MusicSnapshot>("/music")
+          : {
+              ...emptyMusic(),
+              ...(await request<
+                Pick<MusicSnapshot, "selectedTrackId" | "revision">
+              >("/public/music")),
+            };
+      if (
+        token !== generation.current ||
+        sequence !== refreshSequence.current ||
+        !active.current
+      )
+        return;
       apply(next);
       setError("");
     } catch (e) {
-      if (token === generation.current && active.current)
+      if (
+        token === generation.current &&
+        sequence === refreshSequence.current &&
+        active.current
+      ) {
+        if (e instanceof ApiError && [401, 403, 404].includes(e.status)) {
+          // Permission changes need not increment the music revision.
+          controller.current?.setSource("");
+          snapshotRef.current = emptyMusic();
+          setSnapshot(snapshotRef.current);
+        }
         setError((e as Error).message);
+      }
     } finally {
-      if (token === generation.current && active.current) setLoading(false);
+      if (
+        token === generation.current &&
+        sequence === refreshSequence.current &&
+        active.current
+      )
+        setLoading(false);
     }
-  }, [apply]);
+  }, [apply, signedIn]);
   const stop = useCallback(() => {
     active.current = false;
     ++generation.current;
@@ -186,7 +218,7 @@ export function useBackgroundMusic(user: string | null) {
   }, []);
   useEffect(() => {
     stop();
-    if (!signedIn || !audioRef.current) return;
+    if (!ready || !audioRef.current) return;
     active.current = true;
     const token = generation.current;
     controller.current = new BackgroundPlayer(audioRef.current, (value) => {
@@ -202,7 +234,7 @@ export function useBackgroundMusic(user: string | null) {
     window.addEventListener("focus", update);
     document.addEventListener("visibilitychange", update);
     window.addEventListener("shiguang:music-changed", update);
-    window.addEventListener("shiguang:auth-expired", stop);
+    if (signedIn) window.addEventListener("shiguang:auth-expired", stop);
     // Media requests bypass request(); check auth even if a failed stream is in a hidden tab.
     const mediaError = () => void refresh();
     audioRef.current.addEventListener("error", mediaError);
@@ -216,13 +248,13 @@ export function useBackgroundMusic(user: string | null) {
       audio.removeEventListener("error", mediaError);
       stop();
     };
-  }, [signedIn, refresh, stop]);
+  }, [signedIn, ready, refresh, stop]);
 
   async function mutate(
     action: "upload" | "select" | "delete",
     input: { file?: File; title?: string; id?: string | null },
   ) {
-    if (!active.current || pending.current) return false;
+    if (!signedIn || !active.current || pending.current) return false;
     pending.current = true;
     const token = generation.current;
     setBusy(true);
@@ -286,6 +318,7 @@ export function useBackgroundMusic(user: string | null) {
   }
   return {
     audioRef,
+    canManage: signedIn,
     snapshot,
     playback,
     loading,
@@ -315,7 +348,9 @@ export function MusicToggle({ music }: { music: MusicModel }) {
   const state = music.playback.state;
   const label =
     state === "empty"
-      ? "背景音乐：尚未选择歌曲，前往管理"
+      ? music.canManage
+        ? "背景音乐：尚未选择歌曲，前往管理"
+        : "背景音乐：暂无可播放的歌曲"
       : state === "off"
         ? "开启背景音乐"
         : state === "blocked"
@@ -343,7 +378,12 @@ export function MusicToggle({ music }: { music: MusicModel }) {
       {...props}
       type="button"
       aria-pressed={music.playback.enabled}
-      onClick={() => (state === "empty" ? navigate("/admin") : music.toggle())}
+      disabled={state === "empty" && !music.canManage}
+      onClick={() =>
+        state === "empty" && music.canManage
+          ? navigate("/admin")
+          : music.toggle()
+      }
     >
       {icon}
     </button>

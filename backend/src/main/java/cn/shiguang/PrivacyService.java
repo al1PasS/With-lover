@@ -53,6 +53,12 @@ class PrivacyService {
   }catch(JsonProcessingException error){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"访客设置无法保存");}
  }
 
+ void requirePublicMusic(){
+  // SELECTED exposes only the current background track, independently of the page-module switches.
+  if(!"SELECTED".equals(get().mode()))
+   throw new ResponseStatusException(HttpStatus.FORBIDDEN,"这一部分暂时只留给登录后的我们");
+ }
+
  void requirePublic(String module){
   if(!MODULES.contains(module)||!get().allows(module))
    throw new ResponseStatusException(HttpStatus.FORBIDDEN,"这一部分暂时只留给登录后的我们");

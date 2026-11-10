@@ -168,7 +168,7 @@ describe("place card markup", () => {
     expect(later).toContain('fetchPriority="auto"');
   });
 
-  it("keeps metadata visible outside the image and omits visitor management controls", () => {
+  it("keeps an accessible city title and compact caption without visitor management controls", () => {
     const markup = renderToStaticMarkup(
       createElement(PlaceCard, { ...props, canManage: false }),
     );

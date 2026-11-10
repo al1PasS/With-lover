@@ -223,7 +223,7 @@ export default function App() {
     demo ? demoPrivacy() : defaultPrivacy,
   );
   const [privacyBusy, setPrivacyBusy] = useState(false);
-  const music = useBackgroundMusic(user);
+  const music = useBackgroundMusic(user, loaded);
   const loadGeneration = useRef(0);
   type Resource = "memories" | "trash" | "anniversaries" | "places";
   const resourceLoads = useRef(new Map<Resource, AbortController>());
@@ -1066,7 +1066,7 @@ export default function App() {
           </div>
         </nav>
         <div className="header-actions">
-          {user && <MusicToggle music={music} />}
+          <MusicToggle music={music} />
           {user && (
             <div ref={setActivityTarget} className="activity-header-slot" />
           )}
@@ -1696,7 +1696,9 @@ export default function App() {
                             />
                             <span>
                               <strong>允许精选内容公开</strong>
-                              <small>按照下面的模块范围对访客开放</small>
+                              <small>
+                                开放下面的模块及当前背景音乐，不开放曲库管理
+                              </small>
                             </span>
                           </label>
                         </fieldset>

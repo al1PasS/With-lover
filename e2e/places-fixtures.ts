@@ -212,6 +212,10 @@ export async function mockPlacesApi(
       });
     if (/^\/activities\/(?:\d+\/read|read-all)$/.test(path))
       return route.fulfill({ status: 204 });
+    if (path === "/public/music")
+      return options.publicPlaces
+        ? json(route, { revision: 0, selectedTrackId: null })
+        : route.fulfill({ status: 403, json: { message: "合成私密空间" } });
     if (path === "/music")
       return json(route, { revision: 0, selectedTrackId: null, tracks: [] });
     if (["/memories", "/trash", "/anniversaries"].includes(path))

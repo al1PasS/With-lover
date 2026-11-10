@@ -30,6 +30,7 @@ class MusicService {
     record Track(UUID id, String title, String contentType, long byteSize, String createdAt) {}
     record Limits(long maxFileBytes, int maxTracks, long maxTotalBytes) {}
     record Snapshot(List<Track> tracks, UUID selectedTrackId, long revision, Limits limits) {}
+    record PublicMusicSnapshot(UUID selectedTrackId, long revision) {}
     record Content(Resource resource, String contentType, long byteSize) {}
     private record State(UUID selection, long revision) {}
     private record Stored(Track track, String key) {}
@@ -65,6 +66,10 @@ class MusicService {
         cleanup.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
     Snapshot snapshot() { return reads.execute(status -> snapshotInside()); }
+    PublicMusicSnapshot publicSnapshot() {
+        State state = state(false);
+        return new PublicMusicSnapshot(state.selection(), state.revision());
+    }
     private State state(boolean lock) {
         return db.queryForObject("SELECT selected_track_id,revision FROM music_state WHERE id=1" + (lock ? " FOR UPDATE" : ""),
                 (rs, n) -> new State(rs.getObject(1, UUID.class), rs.getLong(2)));
@@ -159,8 +164,19 @@ class MusicService {
             });
         } catch (RuntimeException ex) { log.warn("Committed music deletion awaits orphan cleanup"); }
     }
-    Content content(UUID id) {
-        Stored track = stored(id);
+    Content content(UUID id) { return content(stored(id)); }
+    Content publicContent(UUID id) {
+        // Recheck the current selection in this query on every GET/HEAD, including every Range request.
+        // Never resolve a storage resource for a previously selected or otherwise private library track.
+        Stored selected = db.query("""
+                SELECT track.* FROM music_tracks track
+                JOIN music_state state ON state.selected_track_id=track.id
+                WHERE state.id=1 AND track.id=?
+                """, (rs, n) -> new Stored(track(rs), rs.getString("storage_key")), id)
+                .stream().findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "音乐不存在或已删除"));
+        return content(selected);
+    }
+    private Content content(Stored track) {
         try { return new Content(storage.resource(track.key(), track.track().byteSize()), track.track().contentType(), track.track().byteSize()); }
         catch (IOException ex) { throw unavailable(); }
     }

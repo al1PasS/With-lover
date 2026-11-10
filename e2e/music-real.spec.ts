@@ -153,13 +153,29 @@ test.describe("real-stack private shared music", () => {
       expect(noCsrf.status()).toBe(403);
       expect((await snapshot(memberB.request)).selectedTrackId).toBe(secondTrack.id);
 
-      // Logout really revokes this context's content access, including Range reads.
+      // Logout revokes the private library/content paths but reloads the minimal
+      // public selection. SELECTED can continue via public content; PRIVATE stays denied.
       const audio = await musicAudio(pageA).elementHandle();
       await pageA.getByRole("button", { name: "退出登录", exact: true }).click();
-      await expect(musicToggle(pageA)).toHaveCount(0);
-      await expect.poll(() => audio!.evaluate((element: HTMLAudioElement) => element.paused && !element.getAttribute("src"))).toBe(true);
-      const afterLogout = await memberA.request.get(content, { headers: { Range: "bytes=0-43" }, maxRedirects: 0 });
-      expect(afterLogout.status()).toBe(401);
+      await expect(musicToggle(pageA)).toBeVisible();
+      await expect(musicPanel(pageA)).toHaveCount(0);
+      expect(await audio!.evaluate(element => element === document.querySelector('[data-testid="background-audio"]'))).toBe(true);
+      const publicSelection = await memberA.request.get(`${api}/public/music`);
+      if (publicSelection.ok()) {
+        const selected = await publicSelection.json() as { selectedTrackId: string | null; revision: number };
+        expect(Object.keys(selected).sort()).toEqual(["revision", "selectedTrackId"]);
+        expect(selected.selectedTrackId).toBe(secondTrack.id);
+        await expect(musicAudio(pageA)).toHaveAttribute("src", `${api}/public/music/tracks/${secondTrack.id}/content`);
+        await startMusicIfBlocked(pageA);
+      } else {
+        expect(publicSelection.status()).toBe(403);
+        await expect(musicToggle(pageA)).toBeDisabled();
+        await expect.poll(() => audio!.evaluate((element: HTMLAudioElement) => element.paused && !element.getAttribute("src"))).toBe(true);
+      }
+      for (const path of [`${api}/music`, content]) {
+        const afterLogout = await memberA.request.get(path, { headers: { Range: "bytes=0-43" }, maxRedirects: 0 });
+        expect(afterLogout.status()).toBe(401);
+      }
       // Logging back in proves selection is server data, not prior page/provider state.
       await login(memberA, "music-one");
       await pageA.goto("/admin");
