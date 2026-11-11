@@ -1,10 +1,7 @@
+// Locale output varies across browser/ICU versions (en-CA may use MM/DD/YYYY).
+// Date calculations require YYYY-MM-DD, regardless of the device's locale/timezone.
 export const today = () =>
-  new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(new Date());
+  new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
 export const dayDiff = (from: string, to = today()) =>
   Math.round(
     (Date.parse(to + "T00:00:00Z") - Date.parse(from + "T00:00:00Z")) /
