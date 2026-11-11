@@ -1,6 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { dayDiff, nextAnniversary } from "./dates";
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { dayDiff, nextAnniversary, today } from "./dates";
+afterEach(() => vi.useRealTimers());
 describe("北京时间日期语义", () => {
+  it("北京时间午夜切日，始终返回 ISO 日期", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-12-31T15:59:59Z"));
+    expect(today()).toBe("2026-12-31");
+    vi.setSystemTime(new Date("2026-12-31T16:00:00Z"));
+    expect(today()).toBe("2027-01-01");
+    expect(nextLunarBirthday(12, 28)).toBe("2027-02-04");
+  });
   it("当天累计为0，跨年按自然日计数", () => {
     expect(dayDiff("2025-12-31", "2025-12-31")).toBe(0);
     expect(dayDiff("2025-12-31", "2026-01-01")).toBe(1);
