@@ -55,7 +55,7 @@ function variantsFor(place: Place, maximum: number): ImageVariant[] {
 export function getPlaceImageSources(place: Place) {
   const variants = variantsFor(place, 1920);
   return {
-    src: variants.at(-1)?.url || place.image?.url || place.panoramaImage || "",
+    src: variants[variants.length - 1]?.url || place.image?.url || place.panoramaImage || "",
     srcSet: variants.length
       ? variants.map(({ url, width }) => `${url} ${width}w`).join(", ")
       : undefined,
@@ -78,7 +78,7 @@ export function getPlacePanoramaRatio(place: Place): number {
 // rendition. Demo data URLs and arbitrary URLs must never become proxy requests.
 export function getPlaceReaderUrl(place: Place): string {
   const variants = variantsFor(place, 3200);
-  const largest = variants.at(-1);
+  const largest = variants[variants.length - 1];
   const preview = getPlaceImageSources(place).src;
   if (
     largest &&
@@ -285,7 +285,7 @@ function PlaceViewer({ place }: { place: Place }) {
             <Dialog.Title>{place.city} · 旅行长卷</Dialog.Title>
             {place.visitDate && (
               <time dateTime={place.visitDate}>
-                {place.visitDate.replaceAll("-", ".")}
+                {place.visitDate.replace(/-/g, ".")}
               </time>
             )}
           </div>
@@ -423,7 +423,7 @@ export function PlaceCard({
           <h2 id={titleId}>{place.city}</h2>
           {place.visitDate && (
             <time dateTime={place.visitDate}>
-              {place.visitDate.replaceAll("-", ".")}
+              {place.visitDate.replace(/-/g, ".")}
             </time>
           )}
           {place.description && (

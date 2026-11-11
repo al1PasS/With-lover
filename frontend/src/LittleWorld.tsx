@@ -228,7 +228,7 @@ export function AlbumsPage({ user, onLogin, albumId, publicAllowed }: { user: st
     return <>
       <header className="album-hero">
         <Link to="/albums" className="album-back"><ArrowLeft/>返回照片墙</Link>
-        <div><span>{album.category === "event" ? "事件相册" : "事物相册"}</span><h1>{album.title}</h1><p>{album.description || "把属于这一册的照片放在一起。"}</p><small>{album.photos.length} 张照片 · {album.date.replaceAll("-", ".")}</small></div>
+        <div><span>{album.category === "event" ? "事件相册" : "事物相册"}</span><h1>{album.title}</h1><p>{album.description || "把属于这一册的照片放在一起。"}</p><small>{album.photos.length} 张照片 · {album.date.replace(/-/g, ".")}</small></div>
         {user && <label className="primary album-add"><Camera/>{uploading ? "正在整理照片" : "批量添加照片"}<input type="file" accept="image/*" multiple onChange={addPhotos} disabled={uploading}/></label>}
       </header>
       <section className="album-photo-grid">{album.photos.map((photo, index) => <button className={index % 7 === 0 ? "album-photo-featured" : ""} key={photo.id} id={`activity-${photo.id}`} onClick={() => setSelected(photo)}><img src={photo.src} alt={photo.title} loading="lazy"/><span>{photo.title}</span></button>)}{album.photos.length === 0 && <div className="soft-empty"><Images/><p>这本相册还是空的，从右上角添加第一批照片吧。</p></div>}</section>

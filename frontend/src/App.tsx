@@ -1008,7 +1008,7 @@ export default function App() {
         </button>
         <div className="memory-copy">
           <div className="meta">
-            <span>{m.date.replaceAll("-", ".")}</span>
+            <span>{m.date.replace(/-/g, ".")}</span>
           </div>
           <button className="text-title" onClick={() => setSelected(m)}>
             {m.title}

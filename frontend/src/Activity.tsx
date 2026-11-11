@@ -206,7 +206,7 @@ function time(value: string) {
 function groups(items: Activity[]) {
   const result: { item: Activity; ids: number[]; read: boolean }[] = [];
   for (const item of items) {
-    const last = result.at(-1);
+    const last = result[result.length - 1];
     if (
       last &&
       item.action === "updated" &&

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { dayDiff, nextAnniversary, today } from "./dates";
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 describe("北京时间日期语义", () => {
   it("北京时间午夜切日，始终返回 ISO 日期", () => {
     vi.useFakeTimers();
@@ -26,6 +29,21 @@ describe("北京时间日期语义", () => {
 
 import { nextLunarBirthday } from "./dates";
 describe("农历生日逐年换算", () => {
+  it("不需要浏览器提供农历或 formatToParts 接口", () => {
+    vi.spyOn(Intl.DateTimeFormat.prototype, "formatToParts").mockImplementation(() => {
+      throw new Error("模拟旧安卓缺少日历接口");
+    });
+    expect(nextLunarBirthday(7, 8, "2026-01-01")).toBe("2026-08-20");
+    expect(nextLunarBirthday(12, 28, "2026-01-01")).toBe("2026-02-15");
+  });
+  it("常规六月生日不会在闰六月重复纪念", () => {
+    expect(nextLunarBirthday(6, 1, "2025-06-25")).toBe("2025-06-25");
+    expect(nextLunarBirthday(6, 1, "2025-06-26")).toBe("2026-07-14");
+  });
+  it("拒绝无效农历月日", () => {
+    expect(() => nextLunarBirthday(13, 1, "2026-01-01")).toThrow("无效的农历生日");
+    expect(() => nextLunarBirthday(7, 31, "2026-01-01")).toThrow("无效的农历生日");
+  });
   it("2026年七月初八对应8月20日，当天不跳到下一年", () => {
     expect(nextLunarBirthday(7, 8, "2026-01-01")).toBe("2026-08-20");
     expect(nextLunarBirthday(7, 8, "2026-08-20")).toBe("2026-08-20");
