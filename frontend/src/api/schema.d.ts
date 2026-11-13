@@ -529,7 +529,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 每请求最多 5 张、合计 22 MiB，单张最多 20 MiB；可读照片独立于坏图保存。 */
+        /** @description 每请求最多 5 张、合计 22 MiB，单张最多 10 MiB；接收 JPEG、PNG、WebP 或 GIF 并保存压缩后的 JPEG 和缩略图。网站会在上传前将 HEIC/HEIF 转为可提交的图片格式。可读照片独立于坏图保存。 */
         post: {
             parameters: {
                 query?: never;

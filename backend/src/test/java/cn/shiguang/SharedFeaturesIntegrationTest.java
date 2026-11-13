@@ -105,9 +105,13 @@ class SharedFeaturesIntegrationTest {
         assertTrue(ImageIO.write(new BufferedImage(300,120,BufferedImage.TYPE_INT_RGB),"png",png));
         var good=new MockMultipartFile("files","乱码原图.png","image/png",png.toByteArray());
         var bad=new MockMultipartFile("files","bad.png","image/png",new byte[]{0,1,2});
+        int limit = 10 * 1024 * 1024;
+        var boundary = new MockMultipartFile("files", "boundary.png", "image/png", java.util.Arrays.copyOf(png.toByteArray(), limit));
+        var oversized = new MockMultipartFile("files", "oversized.png", "image/png", java.util.Arrays.copyOf(png.toByteArray(), limit + 1));
         mvc.perform(multipart(path+"/photos").file(good)).andExpect(status().isUnauthorized());
-        var uploaded=body(mvc.perform(multipart(path+"/photos").file(good).file(bad).file(good).with(one).with(csrf()))
+        var uploaded=body(mvc.perform(multipart(path+"/photos").file(boundary).file(bad).file(good).file(oversized).with(one).with(csrf()))
             .andExpect(status().isOk()).andExpect(jsonPath("$.photos.length()").value(2)).andExpect(jsonPath("$.rejected[0]").value(1))
+            .andExpect(jsonPath("$.rejected[1]").value(3))
             .andExpect(jsonPath("$.photos[0].title").doesNotExist()));
         String first=uploaded.path("photos").get(0).path("id").asText(), cover=uploaded.path("photos").get(1).path("id").asText();
         String image=uploaded.path("photos").get(1).path("thumbnail").asText();

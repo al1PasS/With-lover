@@ -82,16 +82,3 @@ export function useSharedState<T>(
 
   return { value, save, loaded, error, reload: () => setRetry((x) => x + 1) };
 }
-
-export async function imageFileToData(file: File, maxSide = 1800) {
-  if (!file.type.startsWith("image/")) throw new Error("请选择图片文件");
-  if (file.size > 12 * 1024 * 1024) throw new Error("原图请控制在 12MB 以内");
-  const source = await createImageBitmap(file);
-  const scale = Math.min(1, maxSide / Math.max(source.width, source.height));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(source.width * scale);
-  canvas.height = Math.round(source.height * scale);
-  canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
-  source.close();
-  return canvas.toDataURL("image/webp", 0.86);
-}

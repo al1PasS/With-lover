@@ -4,11 +4,14 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type PointerEvent,
 } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowLeft,
   Camera,
+  CaretLeft,
+  CaretRight,
   Check,
   FolderOpen,
   FolderPlus,
@@ -22,6 +25,14 @@ import { request } from "./api/client";
 import { PageTitle, VisitorGate } from "./LittleWorld";
 import { demoSettingActivity } from "./Activity";
 import { today } from "./dates";
+import {
+  ImageReadError,
+  MAX_IMAGE_BYTES,
+  PHOTO_ACCEPT,
+  PHOTO_SIZE_ERROR,
+  photoDataUrl,
+  preparePhoto,
+} from "./imageUpload";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
 type Photo = {
@@ -100,73 +111,6 @@ function summary(album: Stored): Album {
   };
 }
 
-// Sequential conversion limits peak memory on a phone. Native decoding also
-// accepts iPhone formats when the browser can display them and applies orientation.
-async function prepare(file: File): Promise<Blob> {
-  if (!file.size || file.size > 20 * 1024 * 1024)
-    throw new Error("图片大小不受支持");
-  let url = "";
-  let bitmap: ImageBitmap | undefined;
-  try {
-    let source: ImageBitmap | HTMLImageElement;
-    try {
-      bitmap = await createImageBitmap(file);
-      source = bitmap;
-    } catch {
-      const image = new Image();
-      url = URL.createObjectURL(file);
-      await new Promise<void>((resolve, reject) => {
-        image.onload = () => resolve();
-        image.onerror = () => reject(new Error("浏览器无法读取这张照片"));
-        image.src = url;
-      });
-      source = image;
-    }
-    const width =
-      source instanceof HTMLImageElement ? source.naturalWidth : source.width;
-    const height =
-      source instanceof HTMLImageElement ? source.naturalHeight : source.height;
-    const scale = Math.min(1, (demo ? 800 : 1800) / Math.max(width, height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(width * scale));
-    canvas.height = Math.max(1, Math.round(height * scale));
-    const context = canvas.getContext("2d", { alpha: false });
-    if (!context) throw new Error("无法准备照片");
-    context.fillStyle = "#fff";
-    context.fillRect(0, 0, canvas.width, canvas.height);
-    context.drawImage(source, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(
-        (blob) =>
-          blob ? resolve(blob) : reject(new Error("无法压缩这张照片")),
-        "image/jpeg",
-        demo ? 0.76 : 0.88,
-      ),
-    );
-  } catch (error) {
-    // A browser decode failure on an otherwise supported format can still succeed on the server.
-    if (
-      !demo &&
-      /\.(jpe?g|png|webp|gif)$/i.test(file.name) &&
-      file.size <= 20 * 1024 * 1024
-    )
-      return file;
-    throw error;
-  } finally {
-    bitmap?.close();
-    if (url) URL.revokeObjectURL(url);
-  }
-}
-
-function dataUrl(blob: Blob) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
-
 export default function AlbumsPage({
   user,
   onLogin,
@@ -192,16 +136,53 @@ export default function AlbumsPage({
   const [busy, setBusy] = useState("");
   const [reload, setReload] = useState(0);
   const upload = useRef<AbortController | null>(null);
+  const photoOpener = useRef<HTMLButtonElement | null>(null);
+  const swipeStart = useRef<{
+    pointerId: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const allowed = Boolean(user) || publicAllowed;
   const albumPath = albumId
     ? `/albums/${encodeURIComponent(albumId)}`
     : "/albums";
-  const selected = detail?.photos.find((p) => p.id === selection);
   const selectedIndex =
     detail?.photos.findIndex((p) => p.id === selection) ?? -1;
+  const selected = detail?.photos[selectedIndex];
   const refresh = () => setReload((x) => x + 1);
 
+  function stepPhoto(direction: -1 | 1) {
+    swipeStart.current = null;
+    if (!detail || busy) return;
+    const { photos } = detail;
+    setSelection((id) => {
+      const index = photos.findIndex((photo) => photo.id === id);
+      return index < 0 ? id : (photos[index + direction]?.id ?? id);
+    });
+  }
+
+  function startSwipe(event: PointerEvent<HTMLDivElement>) {
+    swipeStart.current =
+      event.pointerType === "touch" &&
+      event.isPrimary &&
+      (event.target === event.currentTarget ||
+        event.target instanceof HTMLImageElement)
+        ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY }
+        : null;
+  }
+
+  function finishSwipe(event: PointerEvent<HTMLDivElement>) {
+    const start = swipeStart.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    swipeStart.current = null;
+    const dx = event.clientX - start.x;
+    const dy = event.clientY - start.y;
+    if (Math.abs(dx) >= 48 && Math.abs(dx) > Math.abs(dy) * 1.4)
+      stepPhoto(dx < 0 ? 1 : -1);
+  }
+
   useEffect(() => {
+    swipeStart.current = null;
     setSelection(null);
     setError("");
     setNotice("");
@@ -290,7 +271,8 @@ export default function AlbumsPage({
     const controller = new AbortController();
     upload.current = controller;
     let added = 0,
-      rejected = 0;
+      rejected = 0,
+      oversized = 0;
     let problem = "";
     setNotice("");
     setError("");
@@ -315,17 +297,37 @@ export default function AlbumsPage({
           count = 0;
         };
         for (const [index, file] of files.slice(offset, offset + 5).entries()) {
+          if (controller.signal.aborted) return;
+          setBusy(`正在处理 ${offset + index + 1}/${files.length} 张…`);
+          if (file.size > MAX_IMAGE_BYTES) {
+            oversized++;
+            continue;
+          }
           let blob: Blob;
           try {
-            blob = await prepare(file);
-          } catch {
+            blob = await preparePhoto(file, {
+              maxSide: demo ? 800 : 1800,
+              quality: demo ? 76 : 90,
+            });
+          } catch (error) {
             if (controller.signal.aborted) return;
-            rejected++;
-            continue;
+            // The API can still decode and compress these formats on older browsers.
+            if (
+              !demo &&
+              file.size &&
+              error instanceof ImageReadError &&
+              /\.(jpe?g|png|webp|gif)$/i.test(file.name)
+            ) {
+              blob = file;
+            } else {
+              rejected++;
+              continue;
+            }
           }
           if (controller.signal.aborted) return;
           if (demo) {
-            const src = await dataUrl(blob);
+            const src = await photoDataUrl(blob);
+            if (controller.signal.aborted) return;
             demoPhotos.push({
               id: crypto.randomUUID(),
               src,
@@ -335,11 +337,11 @@ export default function AlbumsPage({
             });
           } else {
             if (bytes + blob.size > 21 * 1024 * 1024) await flush();
+            if (controller.signal.aborted) return;
             form.append("files", blob, "photo");
             bytes += blob.size;
             count++;
           }
-          setBusy(`正在处理 ${offset + index + 1}/${files.length} 张…`);
         }
         if (demo && demoPhotos.length) {
           persistDemo((old) =>
@@ -361,14 +363,14 @@ export default function AlbumsPage({
         setNotice(`已添加 ${added} 张照片`);
         refresh();
       }
+      const errors = [];
+      if (oversized)
+        errors.push(`${oversized} 张照片过大。${PHOTO_SIZE_ERROR}。`);
       if (rejected)
-        setError(
-          `${rejected} 张照片未能读取。请选择 20 MB 以内的 JPEG、PNG、WebP 或 GIF 后重试。`,
-        );
+        errors.push(`${rejected} 张照片未能读取。请检查文件是否完整后重试。`);
       if (problem)
-        setError(
-          `上传中断：${problem}${added ? "。已添加的照片已保留。" : ""}`,
-        );
+        errors.push(`上传中断：${problem}${added ? "。已添加的照片已保留。" : ""}`);
+      setError(errors.join(" "));
       setBusy("");
     }
   }
@@ -494,7 +496,7 @@ export default function AlbumsPage({
               <input
                 type="file"
                 aria-label="批量添加照片"
-                accept="image/*,.heic,.heif"
+                accept={PHOTO_ACCEPT}
                 multiple
                 onChange={add}
                 disabled={Boolean(busy)}
@@ -510,7 +512,8 @@ export default function AlbumsPage({
               key={photo.id}
               id={`activity-${photo.id}`}
               aria-label={`查看第 ${index + 1} 张照片${album.coverId === photo.id ? "，封面" : ""}`}
-              onClick={() => {
+              onClick={(event) => {
+                photoOpener.current = event.currentTarget;
                 setSelection(photo.id);
                 setError("");
               }}
@@ -546,26 +549,82 @@ export default function AlbumsPage({
         )}
         <Dialog.Root
           open={Boolean(selected)}
-          onOpenChange={(open) => !open && setSelection(null)}
+          onOpenChange={(open) => {
+            if (!open) {
+              swipeStart.current = null;
+              setSelection(null);
+            }
+          }}
         >
           <Dialog.Portal>
             <Dialog.Overlay className="overlay" />
-            <Dialog.Content className="modal album-detail">
+            <Dialog.Content
+              className="modal album-detail"
+              onCloseAutoFocus={(event) => {
+                if (photoOpener.current?.isConnected) {
+                  event.preventDefault();
+                  photoOpener.current.focus({ preventScroll: true });
+                }
+              }}
+              onKeyDown={(event) => {
+                if (
+                  event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+                )
+                  return;
+                if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+                  event.preventDefault();
+                  stepPhoto(event.key === "ArrowLeft" ? -1 : 1);
+                }
+              }}
+            >
               <Dialog.Close className="close" aria-label="关闭照片">
-                <X />
+                <X aria-hidden="true" />
               </Dialog.Close>
               {selected && (
                 <>
-                  <div className="album-detail-image">
+                  <div
+                    className="album-detail-image"
+                    onPointerDown={startSwipe}
+                    onPointerUp={finishSwipe}
+                    onPointerCancel={() => {
+                      swipeStart.current = null;
+                    }}
+                  >
                     <img
+                      key={selected.id}
                       src={selected.src}
+                      draggable={false}
                       alt={`《${album.title}》中的第 ${selectedIndex + 1} 张照片`}
                     />
+                    {photos.length > 1 && (
+                      <>
+                        <button
+                          type="button"
+                          className="album-photo-nav album-photo-prev"
+                          aria-label="上一张照片"
+                          aria-disabled={Boolean(busy) || selectedIndex === 0}
+                          onClick={() => stepPhoto(-1)}
+                        >
+                          <CaretLeft size={22} aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          className="album-photo-nav album-photo-next"
+                          aria-label="下一张照片"
+                          aria-disabled={
+                            Boolean(busy) || selectedIndex === photos.length - 1
+                          }
+                          onClick={() => stepPhoto(1)}
+                        >
+                          <CaretRight size={22} aria-hidden="true" />
+                        </button>
+                      </>
+                    )}
                   </div>
                   <div>
                     <span>{selected.date}</span>
-                    <Dialog.Title>
-                      照片 {selectedIndex + 1} / {album.photoCount}
+                    <Dialog.Title aria-live="polite" aria-atomic="true">
+                      照片 {selectedIndex + 1} / {photos.length}
                     </Dialog.Title>
                     <Dialog.Description>
                       {selected.note || `收录在《${album.title}》`}

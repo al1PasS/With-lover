@@ -17,11 +17,12 @@ import java.util.concurrent.Semaphore;
 
 @Component
 class AlbumImages {
+    static final long MAX_PHOTO_BYTES = 10L * 1024 * 1024;
     private final Semaphore slots = new Semaphore(2);
     record Image(byte[] content, byte[] thumbnail) {}
 
     Image prepare(MultipartFile file) {
-        if (file.isEmpty() || file.getSize() > 20 * 1024 * 1024) throw invalid();
+        if (file.isEmpty() || file.getSize() > MAX_PHOTO_BYTES) throw invalid();
         if (!slots.tryAcquire()) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "照片正在处理中，请稍后重试");
         try (var raw = file.getInputStream(); var stream = new MemoryCacheImageInputStream(raw)) {
             var readers = ImageIO.getImageReaders(stream);
@@ -69,6 +70,6 @@ class AlbumImages {
     }
 
     private static ResponseStatusException invalid() {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "无法读取这张图片，请选择 20 MB 以内的 JPEG、PNG、WebP 或 GIF");
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "无法读取这张图片，请选择 10 MB 以内的 JPEG、PNG、WebP 或 GIF");
     }
 }

@@ -17,7 +17,11 @@ final class AlbumUploadFilter extends OncePerRequestFilter {
     private final Semaphore concurrent = new Semaphore(2);
 
     @Override protected boolean shouldNotFilter(HttpServletRequest request) {
-        return !request.getMethod().equals("POST") || !ROUTE.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches();
+        return !isPhotoUpload(request);
+    }
+
+    static boolean isPhotoUpload(HttpServletRequest request) {
+        return request.getMethod().equals("POST") && ROUTE.matcher(request.getRequestURI().substring(request.getContextPath().length())).matches();
     }
 
     @Override protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res, FilterChain chain)

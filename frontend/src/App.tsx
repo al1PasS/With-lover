@@ -75,7 +75,7 @@ import {
   type PrivacyPolicy,
 } from "./types";
 import { PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
-import { imageFileToData } from "./sharedState";
+import { PHOTO_ACCEPT, photoDataUrl, preparePhoto } from "./imageUpload";
 const nav = [
   ["/", "首页", House],
   ["/timeline", "时光", Clock],
@@ -241,6 +241,8 @@ export default function App() {
   const readyResources = useRef(new Set<Resource>());
   const failedResources = useRef(new Set<Resource>());
   const activityResourceKey = useRef("");
+  const memorySelection = useRef(0);
+  const [memoryImageBusy, setMemoryImageBusy] = useState(false);
   const placeSelection = useRef(0);
   const [placeImageBusy, setPlaceImageBusy] = useState(false);
   function cancelResource(resource: Resource, keepReady = false) {
@@ -262,8 +264,11 @@ export default function App() {
     readyResources.current.clear();
     failedResources.current.clear();
     activityResourceKey.current = "";
+    ++memorySelection.current;
+    setMemoryImageBusy(false);
     ++placeSelection.current;
     setPlaceImageBusy(false);
+    setCoverBusy(false);
     setBusy(false);
     setPlacesError("");
   }
@@ -563,42 +568,47 @@ export default function App() {
     }
   }
   function openEdit(m: Memory | null = null) {
+    ++memorySelection.current;
+    setMemoryImageBusy(false);
     setEditing(m);
     setImageData(m?.image || "");
     setFormError("");
     setModal(user ? "edit" : "login");
   }
-  function chooseImage(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function chooseImage(e: ChangeEvent<HTMLInputElement>) {
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setFormError("请选择图片文件");
-      return;
+    const selection = ++memorySelection.current;
+    setMemoryImageBusy(true);
+    setFormError("");
+    try {
+      const data = await photoDataUrl(
+        await preparePhoto(file, {
+          maxSide: demo ? 1000 : 1800,
+          preserveTransparency: true,
+        }),
+      );
+      if (selection === memorySelection.current) setImageData(data);
+    } catch (error) {
+      if (selection === memorySelection.current)
+        setFormError((error as Error).message);
+    } finally {
+      if (selection === memorySelection.current) setMemoryImageBusy(false);
     }
-    if (file.size > 3 * 1024 * 1024) {
-      setFormError("照片请控制在 3MB 以内，方便快速发布");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => setImageData(String(reader.result));
-    reader.onerror = () => setFormError("照片读取失败，请换一张再试");
-    reader.readAsDataURL(file);
   }
   async function choosePlaceImage(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
     if (!file) return;
     const selection = ++placeSelection.current;
     setPlaceImageBusy(true);
     try {
-      if (!file.type.startsWith("image/")) throw new Error("请选择长卷图片");
-      if (file.size > 12 * 1024 * 1024)
-        throw new Error("原图请控制在 12MB 以内");
-      const bitmap = await createImageBitmap(file);
-      const ratio = bitmap.width / bitmap.height;
-      bitmap.close();
-      if (ratio < 6 || ratio > 8)
-        throw new Error("长卷比例需要在 6:1 至 8:1 之间，推荐使用 7:1");
-      const data = await imageFileToData(file, 3200);
+      const data = await photoDataUrl(
+        await preparePhoto(file, { maxSide: 3200, panorama: true }),
+      );
       if (selection !== placeSelection.current) return;
       setPlaceImage(data);
       setFormError("");
@@ -607,15 +617,20 @@ export default function App() {
         setFormError((error as Error).message || "长卷读取失败，请换一张再试");
     } finally {
       if (selection === placeSelection.current) setPlaceImageBusy(false);
-      e.target.value = "";
     }
   }
   async function chooseCover(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const input = e.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
     if (!file || !user) return;
+    const generation = loadGeneration.current;
     setCoverBusy(true);
     try {
-      const data = await imageFileToData(file, 2200);
+      const data = await photoDataUrl(
+        await preparePhoto(file, { maxSide: 2200, preserveTransparency: true }),
+      );
+      if (generation !== loadGeneration.current) return;
       const raw = JSON.stringify(data);
       if (demo) {
         localStorage.setItem("shiguang:cover", raw);
@@ -632,13 +647,14 @@ export default function App() {
           method: "PUT",
           body: JSON.stringify({ value: raw }),
         });
+      if (generation !== loadGeneration.current) return;
       setCoverImage(data);
       setNotice("新的封面已经换好啦");
     } catch (e) {
-      setNotice((e as Error).message);
+      if (generation === loadGeneration.current)
+        setNotice((e as Error).message);
     } finally {
-      setCoverBusy(false);
-      e.target.value = "";
+      if (generation === loadGeneration.current) setCoverBusy(false);
     }
   }
   function openPlace(place: Place | null = null) {
@@ -715,6 +731,7 @@ export default function App() {
   }
   async function saveMemory(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (memoryImageBusy) return;
     setBusy(true);
     setFormError("");
     const f = new FormData(e.currentTarget);
@@ -1242,7 +1259,7 @@ export default function App() {
                             {coverBusy ? "处理中" : "更换封面"}
                             <input
                               type="file"
-                              accept="image/*"
+                              accept={PHOTO_ACCEPT}
                               onChange={chooseCover}
                               disabled={coverBusy}
                             />
@@ -1885,6 +1902,8 @@ export default function App() {
         open={modal !== null}
         onOpenChange={(o) => {
           if (!o) {
+            ++memorySelection.current;
+            setMemoryImageBusy(false);
             ++placeSelection.current;
             setPlaceImageBusy(false);
             setModal(null);
@@ -2129,13 +2148,13 @@ export default function App() {
                         : "选择长卷图片"}
                     <input
                       type="file"
-                      accept="image/jpeg,image/png,image/webp"
+                      accept={PHOTO_ACCEPT}
                       disabled={busy || placeImageBusy}
                       onChange={choosePlaceImage}
                     />
                   </label>
                   <small>
-                    推荐 7:1，允许 6:1 至 8:1；完整保留内容，手机可左右滑阅。
+                    单张最多 10 MB。推荐 7:1，允许 6:1 至 8:1；完整保留内容，手机可左右滑阅。
                     {editingPlace && "不选择新图会保留原长卷。"}
                   </small>
                 </div>
@@ -2202,15 +2221,16 @@ export default function App() {
                   ) : (
                     <label className="upload-photo">
                       <Camera size={20} aria-hidden="true" />
-                      选择照片
+                      {memoryImageBusy ? "正在处理照片…" : "选择照片"}
                       <input
                         type="file"
-                        accept="image/*"
+                        accept={PHOTO_ACCEPT}
                         onChange={chooseImage}
+                        disabled={busy || memoryImageBusy}
                       />
                     </label>
                   )}
-                  <small>支持 JPG、PNG、WebP，单张不超过 3MB</small>
+                  <small>支持 HEIC、HEIF、JPG、PNG、WebP，单张最多 10 MB</small>
                 </div>
                 <label>
                   归到哪一页
@@ -2247,8 +2267,12 @@ export default function App() {
                     {formError}
                   </p>
                 )}
-                <button className="primary" disabled={busy}>
-                  {busy ? "正在保存…" : "收藏这一刻"}
+                <button className="primary" disabled={busy || memoryImageBusy}>
+                  {memoryImageBusy
+                    ? "正在处理照片…"
+                    : busy
+                      ? "正在保存…"
+                      : "收藏这一刻"}
                   <Heart size={17} />
                 </button>
               </form>

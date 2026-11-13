@@ -1,5 +1,6 @@
 package cn.shiguang;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -22,7 +23,12 @@ class ApiErrors {
  @ExceptionHandler(ResponseStatusException.class)
  ResponseEntity<Error> status(ResponseStatusException e){return ResponseEntity.status(e.getStatusCode()).body(error("REQUEST_REJECTED",e.getReason()==null?"记录不存在或不可访问":e.getReason()));}
  @ExceptionHandler(MaxUploadSizeExceededException.class)
- ResponseEntity<Error> uploadLimit(MaxUploadSizeExceededException e){return ResponseEntity.status(413).body(error("UPLOAD_TOO_LARGE","单个文件不能超过 20 MiB，请缩小文件后重试"));}
+ ResponseEntity<Error> uploadLimit(MaxUploadSizeExceededException e,HttpServletRequest request){
+  String message=AlbumUploadFilter.isPhotoUpload(request)
+   ? "单张照片不能超过 10 MB，每批请控制在 22 MiB 以内"
+   : "单个文件不能超过 20 MiB，请缩小文件后重试";
+  return ResponseEntity.status(413).body(error("UPLOAD_TOO_LARGE",message));
+ }
  @ExceptionHandler(MusicRangeException.class)
  ResponseEntity<Error> range(MusicRangeException e){return ResponseEntity.status(416).header(HttpHeaders.CONTENT_RANGE,"bytes */"+e.size).header(HttpHeaders.ACCEPT_RANGES,"bytes").header(HttpHeaders.CACHE_CONTROL,"private, no-store").body(error("RANGE_NOT_SATISFIABLE","请求的音乐字节范围无效"));}
  @ExceptionHandler({HttpMessageNotReadableException.class,MissingServletRequestPartException.class})

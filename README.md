@@ -8,7 +8,7 @@
 
 - 首页：双人昵称、在一起天数、手账封面、最近回忆、纪念日、足迹入口。
 - 时光：关键词和标签筛选（同步地址栏）、回忆详情、上一篇/下一篇。时光和记录盒支持点赞、评论、作者和精确到分钟的发布时间；愿望单标注提出人。
-- 相册：批量导入、照片网格、大图阅读、指定封面；足迹：独立城市长卷、排序管理、手机完整横幅与展开细读。
+- 相册：批量导入、照片网格、大图左右滑动、指定封面；足迹：独立城市长卷、排序管理、手机完整横幅与展开细读。
 - 示例编辑：新建、编辑、草稿、私密/公开摘要、删除和恢复、添加纪念日。
 - 桌面/手机适配、手机四项底部导航、系统深色模式与手动切换、减少动态效果支持。
 
@@ -152,7 +152,7 @@ Compose 已将独立 `media` 卷挂载到 API 容器的 `/app/media`，但当前
 - “展开长卷”支持完整适应/横向细读；**细读默认显示中间**，手动滑动后不会因无关重渲染重新居中。支持触摸与方向键、Home/End、Esc 关闭和焦点恢复。列表失败和单图失败分别提供重试。
 - 只改文字时不重新上传旧图；省略或传 null 的 `panoramaImage` 保留原图，选新图才换图并更新版本。管理写入仍需管理员权限和 CSRF，内容与动态在同一事务提交。
 - Flyway V10 追加图片版本、尺寸和独立 `place_image_variants` 表。已有 `panorama_image`（或旧 `reference_image`）原值保留，首次读取图片时受限解码并生成、持久化派生图；以后不重复转码。坏图不会阻断列表，也不会清空原值，管理员可重新上传。历史图片首次打开有一次 CPU 成本；派生图增加数据库和备份体积，无需新增图片文件卷。
-- 新上传支持真实 JPEG/PNG/WebP，服务端在解码前校验格式和尺寸，并限制字节数、像素数及并发；输出 JPEG 清除原始元数据，透明区域铺白底。WebP 用 TwelveMonkeys **读取**，Thumbnailator/ImageIO 生成 JPEG，不依赖原生 WebP 编码库。
+- 新上传先由浏览器转码和压缩，再提交 JPEG。服务端也接受有效的 JPEG/PNG/WebP，在解码前校验格式和尺寸，并限制字节数、像素数及并发；输出 JPEG 清除原始元数据，透明区域铺白底。WebP 用 TwelveMonkeys **读取**，Thumbnailator/ImageIO 生成 JPEG，不依赖原生 WebP 编码库。
 - 私有图片和足迹元数据 `private, no-store`；只有当前允许访客访问的公开图片使用 `private, no-cache` + ETag，每次重新验证权限、存在性和版本后才可能返回 304。关闭公开后旧 ETag 也不能读取；错误为 no-store。这里没有给私图增加浏览器持久缓存、Service Worker 或公开静态目录。
 - 直达 `/places` 不再顺带请求回忆、回收站和纪念日；这些资源按各自路由加载。退出/会话失效会取消旧请求、清理私有内容及长卷阅读器。
 
@@ -230,7 +230,7 @@ Playwright 默认使用 macOS 已安装的 Google Chrome，可通过 `PLAYWRIGHT
 
 ## 下一阶段明确待办
 
-1. 图片上传、实际格式校验、私有存储鉴权、独立 worker、HEIC 转换、EXIF 清理、重试与清理任务。当前表单不提供假上传。
+1. 图片独立处理队列、上传重试与媒体清理任务。
 2. 可选的地图 SDK、受限代理和地点搜索选点；目前足迹页可独立记录地点，地图图层可在需要时再接入。
 3. 持久相册管理、照片排序、纪念日编辑/删除/置顶/公开配置、网站设置与真实双人资料。
 4. 回忆详情独立路由、服务端关键词/标签筛选、游标分页与前端加载更多。当前 API 用固定 24 条页，前端仅加载首页数据。
@@ -325,7 +325,9 @@ Playwright 默认使用 macOS 已安装的 Google Chrome，可通过 `PLAYWRIGHT
 
 - 登录后可给「时光」和「记录盒」的帖子点赞、取消点赞和发表评论。两人各有一份点赞状态，互动会进入对方的「最近更新」。发布时间显示北京时间的时分，时光所填的事件日期单独保留。旧帖只有确切的历史时间才显示时分。
 - 时光、记录盒、评论和愿望单通过账号 ID 显示最新昵称；改昵称后已有内容同步更新。旧内容只在历史动态或原署名能确认归属时关联账号。
-- 「相册 → 批量添加照片」支持一次选多张，按小批上传；每张原图最多 20 MiB。JPEG、PNG、WebP、GIF 可导入为静态照片；HEIC/HEIF 在设备浏览器可解码时自动转换。原文件名不显示。点开任一照片可「设为相册封面」，删除当前封面会自动使用剩余的首图。旧相册由 V11 迁移，原 JSON 保留供恢复。
+- 「相册 → 批量添加照片」支持一次选多张，按小批上传。单张超过 10 MB 或损坏时会提示，其他可读照片继续上传。点开任一照片可「设为相册封面」，删除当前封面会自动使用剩余的首图。旧相册由 V11 迁移，原 JSON 保留供恢复。
+- 相册、时光配图、首页封面和足迹长卷统一支持单张最多 10 MiB（10 × 1024 × 1024 字节）的原图。浏览器优先原生解码，必要时用 libheif 转换 HEIC/HEIF 的主图，批量时逐张压缩再上传。普通照片缩放后用 MozJPEG 编码为 JPEG，时光和首页封面的透明图使用 WebP 或 PNG 保留透明。动图按静态照片保存。浏览器压缩结果单张最多 1.5 MB，转码去除原始 EXIF。相册服务端重新校验图片并生成缩略图。编解码器按需从站内加载。参考 [libheif](https://github.com/strukturag/libheif)、[heic-to](https://github.com/hoppergee/heic-to)、[MozJPEG](https://github.com/mozilla/mozjpeg) 和 [jSquash](https://github.com/jamsinclair/jSquash)。
+- 图片上传端到端测试使用隔离的 Nginx（5174）、API 和 PostgreSQL，前端按正式配置构建。使用与 `shared-features.spec.ts` 相同的合成账号后，在 `frontend/` 运行 `IMAGE_UPLOAD_REAL_TEST=true npx playwright test image-upload.spec.ts --workers=1`。
 - 真实登录在正常关闭浏览器后保留。Cookie 最长 400 天，日常打开网站时自动续期；主动退出、修改登录用户名或密码、清除站点数据时需要重新登录。
 - iPhone/iPad：用 Safari 分享菜单「添加到主屏幕」，从图标打开拾光并登录，在「管理我们的空间 → 消息提醒」点「开启系统通知」并允许。系统支持时，主屏幕图标会显示未读角标；Android 上的角标取决于浏览器和桌面启动器。系统通知只提示有新动态；点开进入「最近更新」，已读后按未读数更新角标。退出后该设备的登录会话和推送订阅一起失效。平台说明：[Apple Web Push](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)、[Chrome 应用角标](https://developer.chrome.com/docs/capabilities/web-apis/badging-api)。
 - 上线前备份数据库，并同时重建前后端，由 Flyway 执行 V11、V12。系统推送需要 HTTPS 和 API 可出站访问浏览器推送服务（如 `*.push.apple.com`、`fcm.googleapis.com`）；VAPID 密钥由服务端生成并保存在数据库中，无需手工填写。上线后需在 iOS/Android 真机验证授权、关掉页面后的到达情况与角标。

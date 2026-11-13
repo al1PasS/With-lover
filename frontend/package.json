@@ -13,10 +13,12 @@
     "format": "prettier --write src vite.config.ts playwright.config.ts"
   },
   "dependencies": {
+    "@jsquash/jpeg": "1.6.0",
     "@phosphor-icons/react": "2.1.10",
     "@radix-ui/react-dialog": "1.1.15",
     "@tailwindcss/vite": "4.1.14",
     "@vitejs/plugin-react": "5.0.4",
+    "heic-to": "1.6.7",
     "lunar-typescript": "1.8.7",
     "motion": "12.23.24",
     "react": "19.1.1",

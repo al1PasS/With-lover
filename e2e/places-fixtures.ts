@@ -185,6 +185,8 @@ export async function mockPlacesApi(
           ? { name: "合成管理员", role: "ADMIN" }
           : { name: null, role: null },
       );
+    if (path === "/auth/members" && method === "GET" && state.signedIn)
+      return json(route, [{ id: 1, name: "合成管理员" }]);
     if (path === "/auth/csrf")
       return json(route, {
         token: "places-test-csrf",
