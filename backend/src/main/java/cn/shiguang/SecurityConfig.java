@@ -13,9 +13,11 @@ import org.springframework.http.HttpMethod;
 class SecurityConfig {
  @Bean PasswordEncoder passwordEncoder(){return Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8();}
  @Bean UserDetailsService users(AccountRepository accounts){return name->accounts.findByUsername(name).map(a->User.withUsername(a.username).password(a.password).roles(a.role).build()).orElseThrow(()->new UsernameNotFoundException("账户或密码不正确"));}
+ @Bean LoginCookie loginCookie(@org.springframework.beans.factory.annotation.Value("${server.servlet.session.cookie.secure:true}") boolean secure){return new LoginCookie(secure);}
  @Bean SecurityContextRepository contextRepository(){return new HttpSessionSecurityContextRepository();}
  @Bean SecurityFilterChain chain(HttpSecurity http,SecurityContextRepository contexts,@org.springframework.beans.factory.annotation.Value("${shiguang.music.max-concurrent-uploads:2}") int musicUploads)throws Exception{
   http.addFilterBefore(new MusicUploadFilter(musicUploads),CsrfFilter.class);
+  http.addFilterBefore(new AlbumUploadFilter(),CsrfFilter.class);
   http.authorizeHttpRequests(a->a.requestMatchers(HttpMethod.GET,"/actuator/health","/api/v1/public/**","/api/v1/auth/csrf","/api/v1/auth/me").permitAll().requestMatchers(HttpMethod.HEAD,"/api/v1/public/music/tracks/{trackId}/content").permitAll().requestMatchers(HttpMethod.POST,"/api/v1/auth/login").permitAll().requestMatchers("/api/v1/admin/**").hasRole("ADMIN").anyRequest().authenticated());
   http.securityContext(c->c.securityContextRepository(contexts));
   http.csrf(c->c.csrfTokenRepository(new HttpSessionCsrfTokenRepository()));

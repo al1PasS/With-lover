@@ -14,12 +14,15 @@ import java.util.*;
 class ActivityService {
  private final JdbcTemplate db;
  private final ObjectMapper mapper;
- ActivityService(JdbcTemplate db,ObjectMapper mapper){this.db=db;this.mapper=mapper;}
+ private final org.springframework.context.ApplicationEventPublisher events;
+ ActivityService(JdbcTemplate db,ObjectMapper mapper,org.springframework.context.ApplicationEventPublisher events){this.db=db;this.mapper=mapper;this.events=events;}
+ record Recorded(long id){}
  record Item(long id,String actor,boolean mine,String module,String targetId,String action,String title,String summary,String route,String createdAt,boolean read,boolean deleted){}
  record Feed(List<Item> items,long unread,long latestId,Long nextCursor){}
  private String actor(){return SecurityContextHolder.getContext().getAuthentication().getName();}
  void record(String module,String target,String action,String title,String summary,String route){
-  db.update("INSERT INTO activity_events(actor,module,target_id,action,title,summary,route) VALUES (?,?,?,?,?,?,?)",actor(),module,target,action,clip(title,255),clip(summary,500),route);
+  Long id=db.queryForObject("INSERT INTO activity_events(actor,module,target_id,action,title,summary,route) VALUES (?,?,?,?,?,?,?) RETURNING id",Long.class,actor(),module,target,action,clip(title,255),clip(summary,500),route);
+  events.publishEvent(new Recorded(id));
  }
  private static String clip(String s,int n){return s==null?"":s.substring(0,Math.min(s.length(),n));}
  private static String encoded(String value){return java.net.URLEncoder.encode(value,java.nio.charset.StandardCharsets.UTF_8);}
@@ -34,14 +37,15 @@ class ActivityService {
   case "music" -> "/admin?activity="+encoded(id);
   default -> "/";
  };}
+ long unread(String account){return db.queryForObject("SELECT count(*) FROM activity_events e WHERE actor<>? AND NOT EXISTS (SELECT 1 FROM activity_reads r WHERE r.account=? AND r.event_id=e.id)",Long.class,account,account);}
  @Transactional(readOnly=true)
  public Feed feed(String account,boolean all,Long before){
   long latest=Optional.ofNullable(db.queryForObject("SELECT COALESCE(MAX(id),0) FROM activity_events",Long.class)).orElse(0L);
-  long unread=db.queryForObject("SELECT count(*) FROM activity_events e WHERE actor<>? AND NOT EXISTS (SELECT 1 FROM activity_reads r WHERE r.account=? AND r.event_id=e.id)",Long.class,account,account);
+  long unread=unread(account);
   var items=db.query("""
    SELECT e.*,COALESCE(a.nickname,e.actor) nickname,
     EXISTS(SELECT 1 FROM activity_reads r WHERE r.account=? AND r.event_id=e.id) is_read,
-    COALESCE((SELECT x.action='deleted' FROM activity_events x WHERE x.module=e.module AND x.target_id=e.target_id ORDER BY x.id DESC LIMIT 1),false) deleted
+    COALESCE((SELECT x.action='deleted' FROM activity_events x WHERE x.module=e.module AND x.target_id=e.target_id AND x.action NOT IN ('liked','commented') ORDER BY x.id DESC LIMIT 1),false) deleted
    FROM activity_events e LEFT JOIN accounts a ON a.username=e.actor
    WHERE (? OR e.actor<>?) AND e.id<? ORDER BY e.id DESC LIMIT 31
    """,(rs,n)->new Item(rs.getLong("id"),rs.getString("nickname"),account.equals(rs.getString("actor")),rs.getString("module"),rs.getString("target_id"),rs.getString("action"),rs.getString("title"),rs.getString("summary"),rs.getString("route"),rs.getTimestamp("created_at").toInstant().toString(),rs.getBoolean("is_read")||account.equals(rs.getString("actor")),rs.getBoolean("deleted")),account,all,account,before==null?Long.MAX_VALUE:before);

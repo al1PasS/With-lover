@@ -1,3 +1,4 @@
+import { rememberDemoName } from "./members";
 import { useEffect, useState, type FormEvent } from "react";
 import { Eye, EyeSlash, LockSimple, UserCircle } from "@phosphor-icons/react";
 import { request, resetCsrf } from "./api/client";
@@ -51,7 +52,11 @@ export default function ProfileSettings({
   onSaved,
 }: {
   user: string;
-  onSaved: (nickname: string, loginRequired: boolean, username: string) => Promise<void> | void;
+  onSaved: (
+    nickname: string,
+    loginRequired: boolean,
+    username: string,
+  ) => Promise<void> | void;
 }) {
   const [profile, setProfile] = useState<Profile | null>(null),
     [nickname, setNickname] = useState(""),
@@ -120,9 +125,8 @@ export default function ProfileSettings({
         kind === "profile"
           ? {
               nickname: nickname.trim(),
-              username,
               ...(renamed
-                ? { oldPassword: fields.get("renameOldPassword") }
+                ? { username, oldPassword: fields.get("renameOldPassword") }
                 : {}),
             }
           : {
@@ -138,8 +142,7 @@ export default function ProfileSettings({
             method: "PATCH",
             body: JSON.stringify(input),
           });
-      if (demo)
-        sessionStorage.setItem("shiguang:demo-user", result.profile.nickname);
+      if (demo) rememberDemoName(user, result.profile.nickname);
       setProfile(result.profile);
       setNickname(result.profile.nickname);
       setUsername(result.profile.username);
@@ -150,7 +153,11 @@ export default function ProfileSettings({
           ? "账号已更新，请使用新的登录信息重新登录。"
           : "个人信息已保存。 ",
       );
-      await onSaved(result.profile.nickname, result.loginRequired, result.profile.username);
+      await onSaved(
+        result.profile.nickname,
+        result.loginRequired,
+        result.profile.username,
+      );
     } catch (e) {
       (kind === "profile" ? setProfileError : setPasswordError)(
         (e as Error).message,
@@ -205,7 +212,7 @@ export default function ProfileSettings({
                     required
                     autoComplete="nickname"
                   />
-                  <small>显示在个人入口和最近更新中，最多 40 字。</small>
+                  <small>显示在发帖、评论、愿望单和最近更新中，最多 40 字。</small>
                 </div>
                 <div className="account-field">
                   <label htmlFor="account-username">登录用户名</label>
@@ -216,9 +223,9 @@ export default function ProfileSettings({
                     onChange={(e) => setUsername(e.target.value)}
                     disabled={demo}
                     required
-                    minLength={3}
+                    minLength={username !== profile.username ? 3 : undefined}
                     maxLength={40}
-                    pattern="[a-zA-Z0-9_]{3,40}"
+                    pattern={username !== profile.username ? "[a-zA-Z0-9_]{3,40}" : undefined}
                     autoComplete="username"
                     aria-describedby="username-help"
                   />

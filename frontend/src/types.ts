@@ -1,6 +1,10 @@
 import type { components } from "./api/schema";
-export type Memory = Omit<components["schemas"]["PrivateMemory"], "deleted"> & {
+export type Memory = Omit<
+  components["schemas"]["PrivateMemory"],
+  "deleted" | "authorId"
+> & {
   deleted?: boolean;
+  authorId?: number | string | null;
 };
 export type Anniversary = Omit<
   components["schemas"]["Anniversary"],

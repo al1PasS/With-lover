@@ -28,7 +28,7 @@ class ActivityIntegrationTest {
  @Test @Transactional void unreadIsPerAccountAndMarkAllDoesNotConsumeLaterWrites(){
   as("activity-one");activity.record("memories","test","created","旧日期的新回忆","新增了回忆","/timeline?activity=test");
   var mine=activity.feed("activity-one",false,null);assertEquals(0,mine.unread());assertTrue(mine.items().isEmpty());
-  var other=activity.feed("activity-two",false,null);assertEquals(1,other.unread());assertEquals("杰杰",other.items().getFirst().actor());
+  var other=activity.feed("activity-two",false,null);assertEquals(1,other.unread());assertEquals(db.queryForObject("SELECT nickname FROM accounts WHERE id=1",String.class),other.items().getFirst().actor());
   assertEquals(1,activity.feed("activity-two",false,null).unread()); // opening is not reading
   activity.record("cover","cover","updated","封面","更换封面","/");
   activity.readAll("activity-two",other.latestId());

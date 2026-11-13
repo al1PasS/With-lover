@@ -1,26 +1,78 @@
-import { useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
-import * as Dialog from "@radix-ui/react-dialog";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import {
-  ArrowClockwise, Camera, ChatCircleDots, Check, FlowerLotus, Heart,
-  Images, Microphone, NotePencil, PawPrint, Plus, Sparkle, Trash, X,
-  Drop, SunHorizon, Trophy, Leaf, ArrowLeft, FolderOpen, FolderPlus,
+  ArrowClockwise,
+  ChatCircleDots,
+  Check,
+  FlowerLotus,
+  Heart,
+  Microphone,
+  NotePencil,
+  PawPrint,
+  Plus,
+  Sparkle,
+  Trash,
+  X,
+  Drop,
+  SunHorizon,
+  Trophy,
+  Leaf,
   LockSimple,
 } from "@phosphor-icons/react";
 import { useEffect } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { imageFileToData, useSharedState } from "./sharedState";
+import { Link, useSearchParams } from "react-router-dom";
+import { useSharedState } from "./sharedState";
+import PostInteractions from "./PostInteractions";
+import { postTime } from "./dates";
+import { demoIdentity, usePostAuthor } from "./members";
 
-type Entry = { id: string; type: "message" | "story" | "chat" | "voice"; title: string; body: string; author: string; date: string; audio?: string };
-type Wish = { id: string; text: string; done: boolean };
-type Garden = { name: string; kind: "plant" | "pet"; level: number; water: number; sunlight: number; mood: number; growth: number; lastActions: Record<string,string> };
+const demo = import.meta.env.VITE_DEMO !== "false";
+
+type Entry = {
+  id: string;
+  type: "message" | "story" | "chat" | "voice";
+  title: string;
+  body: string;
+  author?: string;
+  authorId?: number | string;
+  publishedAt?: string;
+  date: string;
+  audio?: string;
+};
+type Wish = {
+  id: string;
+  text: string;
+  done: boolean;
+  authorId?: number | string;
+};
+type Garden = {
+  name: string;
+  kind: "plant" | "pet";
+  level: number;
+  water: number;
+  sunlight: number;
+  mood: number;
+  growth: number;
+  lastActions: Record<string, string>;
+};
 type Gacha = { shops: string[]; kinds: string[]; dishes: string[] };
-type AlbumPhoto = { id: string; src: string; title: string; note: string; date: string };
-type AlbumCollection = { id: string; title: string; description: string; category: "event" | "thing"; date: string; photos: AlbumPhoto[] };
-type LegacyAlbumPhoto = AlbumPhoto & { category: "event" | "thing" };
 
 const initialEntries: Entry[] = [
-  { id: "hello", type: "message", title: "写给下一次打开这里的你", body: "今天也辛苦啦。看到这句话，就当收到一个隔空抱抱。", author: "晴", date: "2026-10-26" },
-  { id: "story", type: "story", title: "月亮掉进了热牛奶", body: "从前有两颗不肯睡觉的星星，约好每天互道晚安以后，才一起关灯。", author: "杰", date: "2026-10-24" },
+  {
+    id: "hello",
+    type: "message",
+    title: "写给下一次打开这里的你",
+    body: "今天也辛苦啦。看到这句话，就当收到一个隔空抱抱。",
+    author: "晴",
+    date: "2026-10-26",
+  },
+  {
+    id: "story",
+    type: "story",
+    title: "月亮掉进了热牛奶",
+    body: "从前有两颗不肯睡觉的星星，约好每天互道晚安以后，才一起关灯。",
+    author: "杰",
+    date: "2026-10-24",
+  },
 ];
 const initialWishes: Wish[] = [
   { id: "w1", text: "一起去看一次海边日出", done: false },
@@ -28,48 +80,212 @@ const initialWishes: Wish[] = [
   { id: "w3", text: "拍一组四季合照", done: true },
 ];
 const initialGacha: Gacha = {
-  shops: ["家里简单做", "附近的家常菜馆", "常去的小店", "街边小馆", "外卖收藏夹"],
-  kinds: ["热乎的", "下饭的", "清淡一点的", "带点辣的", "汤汤水水的", "很有烟火气的"],
+  shops: [
+    "家里简单做",
+    "附近的家常菜馆",
+    "常去的小店",
+    "街边小馆",
+    "外卖收藏夹",
+  ],
+  kinds: [
+    "热乎的",
+    "下饭的",
+    "清淡一点的",
+    "带点辣的",
+    "汤汤水水的",
+    "很有烟火气的",
+  ],
   dishes: [
-    "小米粥", "皮蛋瘦肉粥", "青菜肉丝面", "番茄鸡蛋面", "炸酱面", "小馄饨",
-    "鱼香肉丝", "青椒肉丝", "番茄炒蛋", "红烧豆腐", "土豆烧牛肉", "可乐鸡翅",
-    "卤鸭掌", "鸭掌煲", "清蒸鱼", "酸菜鱼", "红烧鱼块", "萝卜排骨汤",
-    "扬州炒饭", "盖浇饭", "饺子", "麻辣烫", "砂锅米线", "煲仔饭", "烤肉拌饭",
+    "小米粥",
+    "皮蛋瘦肉粥",
+    "青菜肉丝面",
+    "番茄鸡蛋面",
+    "炸酱面",
+    "小馄饨",
+    "鱼香肉丝",
+    "青椒肉丝",
+    "番茄炒蛋",
+    "红烧豆腐",
+    "土豆烧牛肉",
+    "可乐鸡翅",
+    "卤鸭掌",
+    "鸭掌煲",
+    "清蒸鱼",
+    "酸菜鱼",
+    "红烧鱼块",
+    "萝卜排骨汤",
+    "扬州炒饭",
+    "盖浇饭",
+    "饺子",
+    "麻辣烫",
+    "砂锅米线",
+    "煲仔饭",
+    "烤肉拌饭",
   ],
 };
 
-function PageTitle({ title, copy, action }: { title: string; copy: string; action?: ReactNode }) {
-  return <div className="little-page-title"><div><span>OUR LITTLE WORLD</span><h1>{title}</h1><p>{copy}</p></div>{action}</div>;
+export function PageTitle({
+  title,
+  copy,
+  action,
+}: {
+  title: string;
+  copy: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="little-page-title">
+      <div>
+        <span>OUR LITTLE WORLD</span>
+        <h1>{title}</h1>
+        <p>{copy}</p>
+      </div>
+      {action}
+    </div>
+  );
 }
 
-function LoginGate({ user, onLogin }: { user: string | null; onLogin: () => void }) {
+function LoginGate({
+  user,
+  onLogin,
+}: {
+  user: string | null;
+  onLogin: () => void;
+}) {
   if (user) return null;
-  return <div className="private-gate"><Heart weight="duotone" size={28}/><div><strong>登录后，两个人一起维护</strong><p>这里的完整内容只留给你们。</p></div><button className="primary" onClick={onLogin}>进入空间</button></div>;
+  return (
+    <div className="private-gate">
+      <Heart weight="duotone" size={28} />
+      <div>
+        <strong>登录后，两个人一起维护</strong>
+        <p>这里的完整内容只留给你们。</p>
+      </div>
+      <button className="primary" onClick={onLogin}>
+        进入空间
+      </button>
+    </div>
+  );
 }
 
-export function VisitorGate({ title, onLogin }: { title: string; onLogin: () => void }) {
-  return <div className="visitor-gate"><div className="visitor-gate-mark"><LockSimple weight="duotone"/></div><div><h1>{title}</h1><p>这一页先轻轻合上了。这里收藏着只属于我们的内容，登录后就能继续翻看。</p><button className="primary" onClick={onLogin}>登录后再看</button><Link to="/">先回首页看看</Link></div></div>;
+export function VisitorGate({
+  title,
+  onLogin,
+}: {
+  title: string;
+  onLogin: () => void;
+}) {
+  return (
+    <div className="visitor-gate">
+      <div className="visitor-gate-mark">
+        <LockSimple weight="duotone" />
+      </div>
+      <div>
+        <h1>{title}</h1>
+        <p>
+          这一页先轻轻合上了。这里收藏着只属于我们的内容，登录后就能继续翻看。
+        </p>
+        <button className="primary" onClick={onLogin}>
+          登录后再看
+        </button>
+        <Link to="/">先回首页看看</Link>
+      </div>
+    </div>
+  );
 }
 
-export function RecordsPage({ user, onLogin }: { user: string | null; onLogin: () => void }) {
-  const { value: entries, save } = useSharedState("messages", user ? initialEntries : [], Boolean(user));
+export function RecordsPage({
+  user,
+  onLogin,
+}: {
+  user: string | null;
+  onLogin: () => void;
+}) {
+  const {
+    value: entries,
+    save,
+    loaded,
+    error: loadError,
+    reload,
+  } = useSharedState(
+    "messages",
+    demo && user ? initialEntries : [],
+    Boolean(user),
+  );
   const [params] = useSearchParams();
-  useEffect(() => { const entry = entries.find(x => x.id === params.get("activity")); if (entry) setType(entry.type); }, [entries, params]);
+  useEffect(() => {
+    const entry = entries.find((x) => x.id === params.get("activity"));
+    if (entry) setType(entry.type);
+  }, [entries, params]);
   const [type, setType] = useState<Entry["type"]>("message");
   const [recording, setRecording] = useState(false);
   const [audioDraft, setAudioDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const recorder = useRef<MediaRecorder | null>(null);
-  const labels = { message: "留言板", story: "睡前故事", chat: "日常对话", voice: "语音口袋" };
-  if (!user) return <><PageTitle title="想说的话，都有地方安放。" copy="留言、睡前故事、日常碎片和声音，慢慢存成两个人的生活录音带。"/><VisitorGate title="记录盒里，留着彼此的话" onLogin={onLogin}/></>;
-  function submit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); if (!user) return onLogin();
-    const f = new FormData(e.currentTarget);
-    const next: Entry = { id: crypto.randomUUID(), type, title: String(f.get("title")) || labels[type], body: String(f.get("body")), author: user, date: new Date().toISOString().slice(0, 10), audio: audioDraft || undefined };
-    void save([next, ...entries]); e.currentTarget.reset(); setAudioDraft("");
+  const author = usePostAuthor();
+  const labels = {
+    message: "留言板",
+    story: "睡前故事",
+    chat: "日常对话",
+    voice: "语音口袋",
+  };
+  if (!user)
+    return (
+      <>
+        <PageTitle
+          title="想说的话，都有地方安放。"
+          copy="留言、睡前故事、日常碎片和声音，慢慢存成两个人的生活录音带。"
+        />
+        <VisitorGate title="记录盒里，留着彼此的话" onLogin={onLogin} />
+      </>
+    );
+  async function change(next: Entry[]) {
+    setBusy(true);
+    setError("");
+    try {
+      await save(next);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!user || busy || !loaded || loadError || recording) return;
+    const form = e.currentTarget,
+      f = new FormData(form);
+    const next: Entry = {
+      id: crypto.randomUUID(),
+      type,
+      title: String(f.get("title")).trim() || labels[type],
+      body: String(f.get("body")).trim(),
+      date: new Date().toISOString().slice(0, 10),
+      audio: audioDraft || undefined,
+      ...(demo
+        ? {
+            authorId: demoIdentity(user),
+            publishedAt: new Date().toISOString(),
+          }
+        : {}),
+    };
+    if (!next.body) {
+      setError("请先写下内容");
+      return;
+    }
+    if (await change([next, ...entries])) {
+      form.reset();
+      setAudioDraft("");
+    }
   }
   async function toggleRecording() {
     if (!user) return onLogin();
-    if (recorder.current?.state === "recording") { recorder.current.stop(); return; }
+    if (recorder.current?.state === "recording") {
+      recorder.current.stop();
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const chunks: Blob[] = [];
@@ -78,40 +294,293 @@ export function RecordsPage({ user, onLogin }: { user: string | null; onLogin: (
       next.onstop = () => {
         const reader = new FileReader();
         reader.onload = () => setAudioDraft(String(reader.result));
-        reader.readAsDataURL(new Blob(chunks, { type: next.mimeType || "audio/webm" }));
+        reader.readAsDataURL(
+          new Blob(chunks, { type: next.mimeType || "audio/webm" }),
+        );
         stream.getTracks().forEach((track) => track.stop());
         setRecording(false);
       };
-      recorder.current = next; next.start(); setRecording(true);
-    } catch { alert("没有获得麦克风权限，请在浏览器设置中允许录音"); }
+      recorder.current = next;
+      next.start();
+      setRecording(true);
+    } catch {
+      alert("没有获得麦克风权限，请在浏览器设置中允许录音");
+    }
   }
-  return <>
-    <PageTitle title="想说的话，都有地方安放。" copy="留言、睡前故事、日常碎片和声音，慢慢存成两个人的生活录音带。" />
-    <LoginGate user={user} onLogin={onLogin}/>
-    <div className="record-tabs">{(Object.keys(labels) as Entry["type"][]).map((key) => <button key={key} className={type === key ? "active" : ""} onClick={() => setType(key)}>{key === "message" ? <NotePencil/> : key === "story" ? <Sparkle/> : key === "chat" ? <ChatCircleDots/> : <Microphone/>}{labels[key]}</button>)}</div>
-    <div className="records-layout">
-      <form className="paper-form" onSubmit={submit}>
-        <h2>{labels[type]}</h2>
-        <label>标题<input name="title" placeholder={type === "chat" ? "比如：今天最好笑的一句话" : "给这一页起个名字"}/></label>
-        <label>{type === "voice" ? "语音备注" : "写下内容"}<textarea name="body" required rows={5} placeholder="把此刻留在这里…"/></label>
-        {type === "voice" && <><button type="button" className={`voice-button ${recording ? "recording" : ""}`} onClick={toggleRecording}><Microphone weight={recording ? "fill" : "regular"}/>{recording ? "正在录音，点一下完成" : audioDraft ? "重新录一段" : "开始录一段声音"}</button>{audioDraft && <audio className="audio-preview" controls src={audioDraft}/>}</>}
-        <button className="primary">放进记录盒</button>
-      </form>
-      <div className="entry-stream">{entries.filter((x) => x.type === type).map((item) => <article key={item.id} id={`activity-${item.id}`}><div><span>{item.date}</span><span>{item.author} 写下</span></div><h2>{item.title}</h2><p>{item.body}</p>{item.audio && <audio controls src={item.audio}/>} {user && <button aria-label={`删除${item.title}`} onClick={() => void save(entries.filter((x) => x.id !== item.id))}><Trash/></button>}</article>)}{entries.filter((x) => x.type === type).length === 0 && <div className="soft-empty"><ChatCircleDots/><p>这一格还空着，等你写下第一句。</p></div>}</div>
-    </div>
-  </>;
+  return (
+    <>
+      <PageTitle
+        title="想说的话，都有地方安放。"
+        copy="留言、睡前故事、日常碎片和声音，慢慢存成两个人的生活录音带。"
+      />
+      <LoginGate user={user} onLogin={onLogin} />
+      <div className="record-tabs">
+        {(Object.keys(labels) as Entry["type"][]).map((key) => (
+          <button
+            key={key}
+            className={type === key ? "active" : ""}
+            onClick={() => setType(key)}
+          >
+            {key === "message" ? (
+              <NotePencil />
+            ) : key === "story" ? (
+              <Sparkle />
+            ) : key === "chat" ? (
+              <ChatCircleDots />
+            ) : (
+              <Microphone />
+            )}
+            {labels[key]}
+          </button>
+        ))}
+      </div>
+      <div className="records-layout">
+        <form className="paper-form" onSubmit={submit}>
+          <h2>{labels[type]}</h2>
+          <label>
+            标题
+            <input
+              name="title"
+              placeholder={
+                type === "chat"
+                  ? "比如：今天最好笑的一句话"
+                  : "给这一页起个名字"
+              }
+            />
+          </label>
+          <label>
+            {type === "voice" ? "语音备注" : "写下内容"}
+            <textarea
+              name="body"
+              required
+              rows={5}
+              placeholder="把此刻留在这里…"
+            />
+          </label>
+          {type === "voice" && (
+            <>
+              <button
+                type="button"
+                className={`voice-button ${recording ? "recording" : ""}`}
+                onClick={toggleRecording}
+              >
+                <Microphone weight={recording ? "fill" : "regular"} />
+                {recording
+                  ? "正在录音，点一下完成"
+                  : audioDraft
+                    ? "重新录一段"
+                    : "开始录一段声音"}
+              </button>
+              {audioDraft && (
+                <audio className="audio-preview" controls src={audioDraft} />
+              )}
+            </>
+          )}
+          <button
+            className="primary"
+            disabled={busy || !loaded || Boolean(loadError) || recording}
+          >
+            {busy ? "保存中…" : "放进记录盒"}
+          </button>
+          {(error || loadError) && (
+            <p className="post-feedback" role="alert">
+              {error || loadError}{" "}
+              {loadError && (
+                <button type="button" onClick={reload}>
+                  重新加载
+                </button>
+              )}
+            </p>
+          )}
+        </form>
+        <div className="entry-stream">
+          {entries
+            .filter((x) => x.type === type)
+            .map((item) => (
+              <article key={item.id} id={`activity-${item.id}`}>
+                <div className="entry-meta">
+                  <span>{author(item.authorId, item.author)} 写下</span>
+                  <time dateTime={item.publishedAt || item.date}>
+                    {item.publishedAt ? postTime(item.publishedAt) : item.date}
+                  </time>
+                </div>
+                <h2>{item.title}</h2>
+                <p>{item.body}</p>
+                {item.audio && <audio controls src={item.audio} />}
+                <PostInteractions
+                  key={`${item.id}:${params.get("activity") || ""}`}
+                  module="messages"
+                  id={item.id}
+                  title={item.title}
+                  user={user}
+                  expanded={params.get("activity") === item.id}
+                />
+                <button
+                  aria-label={`删除${item.title}`}
+                  disabled={busy || !loaded || Boolean(loadError)}
+                  onClick={() =>
+                    void change(entries.filter((x) => x.id !== item.id))
+                  }
+                >
+                  <Trash />
+                </button>
+              </article>
+            ))}
+          {!entries.some((x) => x.type === type) && (
+            <div className="soft-empty">
+              <ChatCircleDots />
+              <p>
+                {!loaded ? "正在打开记录盒…" : "这一格还空着，等你写下第一句。"}
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
 }
 
-export function WishesPage({ user, onLogin }: { user: string | null; onLogin: () => void }) {
-  const { value: wishes, save } = useSharedState("wishes", user ? initialWishes : [], Boolean(user));
-  function add(e: FormEvent<HTMLFormElement>) { e.preventDefault(); if (!user) return onLogin(); const f = new FormData(e.currentTarget); void save([...wishes, { id: crypto.randomUUID(), text: String(f.get("wish")), done: false }]); e.currentTarget.reset(); }
+export function WishesPage({
+  user,
+  onLogin,
+}: {
+  user: string | null;
+  onLogin: () => void;
+}) {
+  const {
+    value: wishes,
+    save,
+    loaded,
+    error: loadError,
+    reload,
+  } = useSharedState(
+    "wishes",
+    demo && user ? initialWishes : [],
+    Boolean(user),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const author = usePostAuthor();
+  const disabled = busy || !loaded || Boolean(loadError);
+  async function change(next: Wish[]) {
+    setBusy(true);
+    setError("");
+    try {
+      await save(next);
+      return true;
+    } catch (e) {
+      setError((e as Error).message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function add(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!user || disabled) return;
+    const form = e.currentTarget,
+      f = new FormData(form);
+    const text = String(f.get("wish")).trim();
+    if (
+      text &&
+      (await change([
+        ...wishes,
+        {
+          id: crypto.randomUUID(),
+          text,
+          done: false,
+          ...(demo ? { authorId: demoIdentity(user) } : {}),
+        },
+      ]))
+    )
+      form.reset();
+  }
   const open = wishes.filter((w) => !w.done).length;
-  if (!user) return <><PageTitle title="把以后，也写进今天。" copy="想去的地方、想做的小事、想一起成为的人，都不怕忘记。"/><VisitorGate title="愿望还在等我们慢慢实现" onLogin={onLogin}/></>;
-  return <>
-    <PageTitle title="把以后，也写进今天。" copy="想去的地方、想做的小事、想一起成为的人，都不怕忘记。" />
-    <LoginGate user={user} onLogin={onLogin}/>
-    <section className="wish-board"><div className="wish-summary"><FlowerLotus size={44} weight="duotone"/><strong>{open}</strong><span>个愿望，等我们一起实现</span></div><form onSubmit={add}><label htmlFor="new-wish">新的愿望</label><div><input id="new-wish" name="wish" required placeholder="比如：冬天一起去泡温泉"/><button className="primary"><Plus/>写下来</button></div></form><div className="wish-list">{wishes.map((wish) => <article id={`activity-${wish.id}`} className={wish.done ? "done" : ""} key={wish.id}><button className="wish-check" aria-label={wish.done ? "标记为未完成" : "标记为已完成"} onClick={() => void save(wishes.map((w) => w.id === wish.id ? { ...w, done: !w.done } : w))}>{wish.done && <Check weight="bold"/>}</button><span>{wish.text}</span><button className="wish-delete" aria-label={`删除${wish.text}`} onClick={() => void save(wishes.filter((w) => w.id !== wish.id))}><X/></button></article>)}</div></section>
-  </>;
+  if (!user)
+    return (
+      <>
+        <PageTitle
+          title="把以后，也写进今天。"
+          copy="想去的地方、想做的小事、想一起成为的人，都不怕忘记。"
+        />
+        <VisitorGate title="愿望还在等我们慢慢实现" onLogin={onLogin} />
+      </>
+    );
+  return (
+    <>
+      <PageTitle
+        title="把以后，也写进今天。"
+        copy="想去的地方、想做的小事、想一起成为的人，都不怕忘记。"
+      />
+      <section className="wish-board">
+        <div className="wish-summary">
+          <FlowerLotus size={44} weight="duotone" />
+          <strong>{open}</strong>
+          <span>个愿望，等我们一起实现</span>
+        </div>
+        <form onSubmit={add}>
+          <label htmlFor="new-wish">新的愿望</label>
+          <div>
+            <input
+              id="new-wish"
+              name="wish"
+              required
+              maxLength={255}
+              placeholder="比如：冬天一起去泡温泉"
+            />
+            <button className="primary" disabled={disabled}>
+              <Plus />
+              {busy ? "保存中…" : "写下来"}
+            </button>
+          </div>
+        </form>
+        {(error || loadError) && (
+          <p className="post-feedback" role="alert">
+            {error || loadError}{" "}
+            {loadError && <button onClick={reload}>重新加载</button>}
+          </p>
+        )}
+        <div className="wish-list">
+          {wishes.map((wish) => (
+            <article
+              id={`activity-${wish.id}`}
+              className={wish.done ? "done" : ""}
+              key={wish.id}
+            >
+              <button
+                className="wish-check"
+                aria-label={wish.done ? "标记为未完成" : "标记为已完成"}
+                disabled={disabled}
+                onClick={() =>
+                  void change(
+                    wishes.map((w) =>
+                      w.id === wish.id ? { ...w, done: !w.done } : w,
+                    ),
+                  )
+                }
+              >
+                {wish.done && <Check weight="bold" />}
+              </button>
+              <div className="wish-copy">
+                <span>{wish.text}</span>
+                <small>提出人：{author(wish.authorId)}</small>
+              </div>
+              <button
+                className="wish-delete"
+                aria-label={`删除${wish.text}`}
+                disabled={disabled}
+                onClick={() =>
+                  void change(wishes.filter((w) => w.id !== wish.id))
+                }
+              >
+                <X />
+              </button>
+            </article>
+          ))}
+        </div>
+      </section>
+    </>
+  );
 }
 
 export function PlayPage({ user, onLogin }: { user: string | null; onLogin: () => void }) {
@@ -162,86 +631,5 @@ export function PlayPage({ user, onLogin }: { user: string | null; onLogin: () =
       <section className="gacha-card"><div className="gacha-machine"><div className="gacha-window"><span>吃</span><span>什</span><span>么</span></div><button aria-label="转动扭蛋机" onClick={draw}><ArrowClockwise weight="bold"/></button></div><div><h2>今晚吃什么</h2><p>{pick}</p><button className="primary" onClick={draw}>转一次扭蛋</button></div></section>
       <section className="mini-game"><div className="game-intro"><PawPrint size={34} weight="duotone"/><h2>三秒猜拳</h2><p>选一个手势，看看这一轮谁更有运气。</p><div className="score-board"><span>你 <b>{score.mine}</b></span><span>平局 <b>{score.draws}</b></span><span>对方 <b>{score.theirs}</b></span></div></div><div className="round-stage"><div className="hands"><strong><small>你出了</small>{round.mine}</strong><span>对</span><strong><small>对方出了</small>{round.theirs}</strong></div><div className="round-result"><Trophy weight="duotone"/>{round.result}</div></div><div className="hand-actions"><span>请选择</span>{options.map((x) => <button key={x} onClick={() => playHand(x)}>{x}</button>)}</div></section>
     </div>
-  </>;
-}
-
-const generatedAlbumIds = new Set(["our-trips", "little-favorites"]);
-
-function removeMemoryPhotos(albums: AlbumCollection[]) {
-  return albums
-    .map((album) => ({
-      ...album,
-      photos: album.photos.filter((photo) => !photo.id.startsWith("memory-")),
-    }))
-    .filter((album) => album.photos.length > 0 || !generatedAlbumIds.has(album.id));
-}
-
-export function AlbumsPage({ user, onLogin, albumId, publicAllowed }: { user: string | null; onLogin: () => void; albumId?: string | null; publicAllowed: boolean }) {
-  const navigate = useNavigate();
-  const { value: stored, save } = useSharedState<AlbumCollection[] | LegacyAlbumPhoto[]>("albums", [], Boolean(user) || publicAllowed, !user && publicAllowed);
-  const albums = useMemo<AlbumCollection[]>(() => {
-    if (!stored.length) return [];
-    if ("photos" in stored[0]) return removeMemoryPhotos(stored as AlbumCollection[]);
-    const legacy = stored as LegacyAlbumPhoto[];
-    return removeMemoryPhotos((["event", "thing"] as const).map((category) => ({
-      id: `migrated-${category}`,
-      title: category === "event" ? "旧事件照片" : "旧事物照片",
-      description: "从旧版照片墙自动整理而来。",
-      category,
-      date: legacy.find((photo) => photo.category === category)?.date || new Date().toISOString().slice(0, 10),
-      photos: legacy.filter((photo) => photo.category === category).map(({ category: _category, ...photo }) => photo),
-    })).filter((album) => album.photos.length));
-  }, [stored]);
-  const [category, setCategory] = useState<"event" | "thing">("event");
-  const [creating, setCreating] = useState(false);
-  const [selected, setSelected] = useState<AlbumPhoto | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const album = albums.find((item) => item.id === albumId);
-  if (!user && !publicAllowed) return <><PageTitle title="我们的相册。" copy="每一本都是一个合集，照片墙只展示封面，点进去再慢慢翻看。"/><VisitorGate title="相册暂时只为彼此打开" onLogin={onLogin}/></>;
-  async function persist(next: AlbumCollection[]) { await save(next); }
-  async function createAlbum(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault(); if (!user) return onLogin();
-    const form = new FormData(e.currentTarget);
-    const next: AlbumCollection = { id: crypto.randomUUID(), title: String(form.get("title")), description: String(form.get("description")), category: String(form.get("category")) as "event" | "thing", date: String(form.get("date")), photos: [] };
-    await persist([next, ...albums]); setCreating(false); navigate(`/albums/${next.id}`);
-  }
-  async function addPhotos(e: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files || []); if (!album || !files.length) return;
-    if (!user) return onLogin(); setUploading(true);
-    try {
-      const added = await Promise.all(files.slice(0, 20).map(async (file) => ({ id: crypto.randomUUID(), src: await imageFileToData(file, 1800), title: file.name.replace(/\.[^.]+$/, ""), note: "", date: new Date().toISOString().slice(0, 10) })));
-      await persist(albums.map((item) => item.id === album.id ? { ...item, photos: [...item.photos, ...added] } : item));
-    } catch (error) { alert((error as Error).message); }
-    finally { setUploading(false); e.target.value = ""; }
-  }
-  function removeAlbum(target: AlbumCollection) {
-    if (!window.confirm(`确定删除相册“${target.title}”及其中的照片吗？`)) return;
-    void persist(albums.filter((item) => item.id !== target.id));
-  }
-  function removePhoto(photo: AlbumPhoto) {
-    if (!album || !window.confirm(`确定移除“${photo.title}”吗？`)) return;
-    void persist(albums.map((item) => item.id === album.id ? { ...item, photos: item.photos.filter((image) => image.id !== photo.id) } : item));
-    setSelected(null);
-  }
-  if (albumId) {
-    if (!album) return <div className="album-not-found"><FolderOpen/><h1>没有找到这本相册</h1><Link to="/albums">返回照片墙</Link></div>;
-    return <>
-      <header className="album-hero">
-        <Link to="/albums" className="album-back"><ArrowLeft/>返回照片墙</Link>
-        <div><span>{album.category === "event" ? "事件相册" : "事物相册"}</span><h1>{album.title}</h1><p>{album.description || "把属于这一册的照片放在一起。"}</p><small>{album.photos.length} 张照片 · {album.date.replace(/-/g, ".")}</small></div>
-        {user && <label className="primary album-add"><Camera/>{uploading ? "正在整理照片" : "批量添加照片"}<input type="file" accept="image/*" multiple onChange={addPhotos} disabled={uploading}/></label>}
-      </header>
-      <section className="album-photo-grid">{album.photos.map((photo, index) => <button className={index % 7 === 0 ? "album-photo-featured" : ""} key={photo.id} id={`activity-${photo.id}`} onClick={() => setSelected(photo)}><img src={photo.src} alt={photo.title} loading="lazy"/><span>{photo.title}</span></button>)}{album.photos.length === 0 && <div className="soft-empty"><Images/><p>这本相册还是空的，从右上角添加第一批照片吧。</p></div>}</section>
-      {user && <button className="album-delete" onClick={() => removeAlbum(album)}><Trash/>删除这本相册</button>}
-      <Dialog.Root open={Boolean(selected)} onOpenChange={(open) => !open && setSelected(null)}><Dialog.Portal><Dialog.Overlay className="overlay"/><Dialog.Content className="modal album-detail"><Dialog.Close className="close" aria-label="关闭照片"><X/></Dialog.Close>{selected && <><div className="album-detail-image"><img src={selected.src} alt={selected.title}/></div><div><span>{selected.date}</span><Dialog.Title>{selected.title}</Dialog.Title><Dialog.Description>{selected.note || `收录在《${album.title}》`}</Dialog.Description>{user && <button className="album-photo-delete" onClick={() => removePhoto(selected)}><Trash/>移出相册</button>}</div></>}</Dialog.Content></Dialog.Portal></Dialog.Root>
-    </>;
-  }
-  const filtered = albums.filter((item) => item.category === category);
-  return <>
-    <PageTitle title="我们的相册。" copy="每一本都是一个合集，照片墙只展示封面，点进去再慢慢翻看。" action={<button className="primary" onClick={() => user ? setCreating(true) : onLogin()}><FolderPlus/>新建相册</button>}/>
-    <LoginGate user={user} onLogin={onLogin}/>
-    <div className="album-switch"><button className={category === "event" ? "active" : ""} onClick={() => setCategory("event")}>事件相册</button><button className={category === "thing" ? "active" : ""} onClick={() => setCategory("thing")}>事物相册</button></div>
-    <section className="album-collection-wall">{filtered.map((item, index) => <Link to={`/albums/${encodeURIComponent(item.id)}`} key={item.id} className={index % 4 === 0 ? "album-collection-wide" : ""}><div>{item.photos[0] ? <img src={item.photos[0].src} alt="" loading="lazy"/> : <span className="album-empty-cover"><FolderOpen/></span>}<span className="album-count-badge">{item.photos.length} 张</span></div><section><span>{item.category === "event" ? "事件相册" : "事物相册"}</span><h2>{item.title}</h2><p>{item.description || "等待放进更多照片。"}</p></section></Link>)}{filtered.length === 0 && <div className="soft-empty"><FolderOpen/><p>这一类还没有相册，先新建一本吧。</p></div>}</section>
-    <Dialog.Root open={creating} onOpenChange={setCreating}><Dialog.Portal><Dialog.Overlay className="overlay"/><Dialog.Content className="modal"><Dialog.Close className="close" aria-label="关闭"><X/></Dialog.Close><Dialog.Title>新建一本相册</Dialog.Title><Dialog.Description>先建立合集，再进入相册批量添加照片。</Dialog.Description><form onSubmit={createAlbum}><label>相册名称<input name="title" required maxLength={80} placeholder="例如：第一次去海边"/></label><label>相册分类<select name="category" defaultValue={category}><option value="event">事件相册</option><option value="thing">事物相册</option></select></label><label>日期<input name="date" type="date" required defaultValue={new Date().toISOString().slice(0, 10)}/></label><label>相册说明<textarea name="description" rows={3} maxLength={300} placeholder="这本相册收集了什么？"/></label><button className="primary">创建并进入相册</button></form></Dialog.Content></Dialog.Portal></Dialog.Root>
   </>;
 }

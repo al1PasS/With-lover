@@ -1,3 +1,13 @@
+import AlbumsPage from "./Albums";
+import PostInteractions from "./PostInteractions";
+import {
+  Members,
+  demoIdentity,
+  demoMemberName,
+  useMemberDirectory,
+} from "./members";
+import { PushSettings, clearAppNotifications } from "./push";
+import { postTime } from "./dates";
 import ProfileSettings from "./ProfileSettings";
 import { PlaceCard } from "./Places";
 import { MusicPanel, MusicToggle, useBackgroundMusic } from "./Music";
@@ -64,13 +74,7 @@ import {
   type Place,
   type PrivacyPolicy,
 } from "./types";
-import {
-  AlbumsPage,
-  PlayPage,
-  RecordsPage,
-  VisitorGate,
-  WishesPage,
-} from "./LittleWorld";
+import { PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
 import { imageFileToData } from "./sharedState";
 const nav = [
   ["/", "首页", House],
@@ -224,6 +228,13 @@ export default function App() {
   );
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const music = useBackgroundMusic(user, loaded);
+  const members = useMemberDirectory(user);
+  const memoryAuthor = (m: Memory) =>
+    typeof m.authorId === "number"
+      ? members.find((member) => member.id === m.authorId)?.name || "未署名"
+      : m.authorId
+        ? demoMemberName(m.authorId)
+        : "未署名";
   const loadGeneration = useRef(0);
   type Resource = "memories" | "trash" | "anniversaries" | "places";
   const resourceLoads = useRef(new Map<Resource, AbortController>());
@@ -280,6 +291,8 @@ export default function App() {
       setAnniversaries([]);
       setPlaces([]);
       setSelected(null);
+      setEditing(null);
+      setImageData("");
       setCoverImage("");
       setPrivacy(defaultPrivacy);
       setLoaded(true);
@@ -650,11 +663,12 @@ export default function App() {
     try {
       if (demo) {
         const demoUser = String(f.get("username")) || couple.male;
-        setUser(demoUser);
+        setUser(demoMemberName(demoUser));
         setUserRole("ADMIN");
         setMemories(demoMemories);
         setAnniversaries(demoAnniversaries);
-        sessionStorage.setItem("shiguang:demo-user", demoUser);
+        sessionStorage.setItem("shiguang:demo-username", demoUser);
+        sessionStorage.setItem("shiguang:demo-user", demoMemberName(demoUser));
         setNotice("已进入示例编辑模式，内容保存在当前浏览器");
       } else {
         await request("/auth/login", {
@@ -684,7 +698,11 @@ export default function App() {
       resetCsrf();
       setUser(null);
       setUserRole(null);
-      if (demo) sessionStorage.removeItem("shiguang:demo-user");
+      if (demo) {
+        sessionStorage.removeItem("shiguang:demo-user");
+        sessionStorage.removeItem("shiguang:demo-username");
+      }
+      clearAppNotifications();
       setMemories([]);
       setAnniversaries([]);
       setPlaces([]);
@@ -714,6 +732,14 @@ export default function App() {
       publicVisible: f.get("publicVisible") === "on",
       publicSummary: String(f.get("publicSummary")),
       version: editing?.version || 0,
+      ...(demo && user
+        ? {
+            authorId: editing ? editing.authorId : demoIdentity(user),
+            publishedAt: editing
+              ? editing.publishedAt
+              : new Date().toISOString(),
+          }
+        : {}),
     };
     try {
       if (m.publicVisible && !m.publicSummary.trim())
@@ -1009,6 +1035,12 @@ export default function App() {
         <div className="memory-copy">
           <div className="meta">
             <span>{m.date.replace(/-/g, ".")}</span>
+            {user && <span>{memoryAuthor(m)}</span>}
+            {user && m.publishedAt && (
+              <time dateTime={m.publishedAt} title="发布时间">
+                {postTime(m.publishedAt)}
+              </time>
+            )}
           </div>
           <button className="text-title" onClick={() => setSelected(m)}>
             {m.title}
@@ -1016,14 +1048,22 @@ export default function App() {
           <p>{m.publicSummary || m.body}</p>
           <div className="card-bottom">
             <span className="tag">{m.tag}</span>
-            <Heart size={18} />
+            {user && m.published && (
+              <button
+                className="memory-discuss"
+                onClick={() => setSelected(m)}
+                aria-label={`查看${m.title}的点赞和评论`}
+              >
+                <ChatCircleDots size={18} aria-hidden="true" />
+              </button>
+            )}
           </div>
         </div>
       </article>
     );
   }
   return (
-    <>
+    <Members.Provider value={members}>
       <header className="site-header">
         <Link to="/" className="brand">
           <span className="brand-icon">
@@ -1408,6 +1448,7 @@ export default function App() {
               ))}
             {pathname.startsWith("/albums") && (
               <AlbumsPage
+                key={String(Boolean(user))}
                 user={user}
                 onLogin={() => setModal("login")}
                 albumId={
@@ -1419,13 +1460,21 @@ export default function App() {
               />
             )}
             {pathname === "/records" && (
-              <RecordsPage user={user} onLogin={() => setModal("login")} />
+              <RecordsPage
+                key={String(Boolean(user))}
+                user={user}
+                onLogin={() => setModal("login")}
+              />
             )}
             {pathname === "/play" && (
               <PlayPage user={user} onLogin={() => setModal("login")} />
             )}
             {pathname === "/wishes" && (
-              <WishesPage user={user} onLogin={() => setModal("login")} />
+              <WishesPage
+                key={String(Boolean(user))}
+                user={user}
+                onLogin={() => setModal("login")}
+              />
             )}
             {pathname === "/places" &&
               (user || visitorCanView(privacy, "places") ? (
@@ -1624,6 +1673,7 @@ export default function App() {
                       onSaved={async (nickname, loginRequired, username) => {
                         if (loginRequired) {
                           music.stop();
+                          clearAppNotifications();
                           setLoginUsername(username);
                           setLoginHint(
                             "个人信息已更新，请使用更新后的账号信息重新登录。",
@@ -1638,6 +1688,7 @@ export default function App() {
                         }
                       }}
                     />
+                    <PushSettings />
                     <MusicPanel music={music} />
                     {userRole === "ADMIN" && (
                       <section
@@ -2227,12 +2278,34 @@ export default function App() {
                   />
                 )}
                 <div className="detail-body">
-                  <span className="meta">{selected.date}</span>
+                  <div className="memory-byline">
+                    <span className="meta">{selected.date}</span>
+                    {user && (
+                      <>
+                        <span>{memoryAuthor(selected)} 写下</span>
+                        {selected.publishedAt && (
+                          <time dateTime={selected.publishedAt}>
+                            发布于 {postTime(selected.publishedAt)}
+                          </time>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <Dialog.Title>{selected.title}</Dialog.Title>
                   <Dialog.Description className="story-body">
                     {user ? selected.body : selected.publicSummary}
                   </Dialog.Description>
                   <span className="tag">{selected.tag}</span>
+                  {user && selected.published && (
+                    <PostInteractions
+                      key={selected.id}
+                      module="memories"
+                      id={selected.id}
+                      title={selected.title}
+                      user={user}
+                      expanded
+                    />
+                  )}
                   <div className="detail-controls">
                     <button
                       onClick={() => {
@@ -2275,6 +2348,6 @@ export default function App() {
           </Dialog.Content>
         </Dialog.Portal>
       </Dialog.Root>
-    </>
+    </Members.Provider>
   );
 }

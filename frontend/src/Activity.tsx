@@ -8,8 +8,10 @@ import {
   Check,
   ArrowClockwise,
 } from "@phosphor-icons/react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { request } from "./api/client";
+import { usePushActivity } from "./push";
+import { demoIdentity, demoMemberName } from "./members";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
 export type Activity = import("./api/schema").components["schemas"]["Activity"];
@@ -43,8 +45,9 @@ export function demoActivity(
   route: string,
 ) {
   if (!demo) return;
-  const actor = sessionStorage.getItem("shiguang:demo-user");
-  if (!actor) return;
+  const name = sessionStorage.getItem("shiguang:demo-user");
+  if (!name) return;
+  const actor = demoIdentity(name);
   const rows = demoRows();
   rows.unshift({
     id: Math.max(Date.now(), (rows[0]?.id || 0) + 1),
@@ -93,6 +96,7 @@ function demoRead(user: string): number[] {
   }
 }
 function demoFeed(user: string, all: boolean, before?: number): Feed {
+  user = demoIdentity(user);
   const rows = demoRows(),
     read = new Set(demoRead(user));
   const visible = rows.filter(
@@ -101,11 +105,16 @@ function demoFeed(user: string, all: boolean, before?: number): Feed {
   return {
     items: visible.slice(0, 30).map((x) => ({
       ...x,
+      actor: demoMemberName(x.actor),
       mine: x.actor === user,
       read: x.actor === user || read.has(x.id),
       deleted:
-        rows.find((y) => y.module === x.module && y.targetId === x.targetId)
-          ?.action === "deleted",
+        rows.find(
+          (y) =>
+            y.module === x.module &&
+            y.targetId === x.targetId &&
+            !["liked", "commented"].includes(y.action),
+        )?.action === "deleted",
     })),
     unread: rows.filter((x) => x.actor !== user && !read.has(x.id)).length,
     latestId: rows[0]?.id || 0,
@@ -228,6 +237,7 @@ export function useActivities(user: string | null) {
     [all, setAll] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [fetchedFor, setFetchedFor] = useState<string | null>(null);
   const [preview, setPreview] = useState<Activity[]>([]);
   const generation = useRef(0),
     currentUser = useRef(user);
@@ -256,6 +266,7 @@ export function useActivities(user: string | null) {
           items: before ? [...prev.items, ...next.items] : next.items,
         }));
         setError("");
+        setFetchedFor(user);
       } catch (e) {
         if (token === generation.current && currentUser.current === user)
           setError((e as Error).message);
@@ -269,6 +280,7 @@ export function useActivities(user: string | null) {
   useEffect(() => {
     ++generation.current;
     setFeed(empty);
+    setFetchedFor(null);
     setPreview([]);
     setError("");
     setBusy(false);
@@ -296,10 +308,10 @@ export function useActivities(user: string | null) {
     try {
       if (demo)
         localStorage.setItem(
-          `shiguang:activity-read:${user}`,
+          `shiguang:activity-read:${demoIdentity(user)}`,
           JSON.stringify([
             ...new Set([
-              ...demoRead(user),
+              ...demoRead(demoIdentity(user)),
               ...(ids ||
                 demoRows()
                   .filter((x) => x.id <= feed.latestId)
@@ -343,7 +355,17 @@ export function useActivities(user: string | null) {
       return false;
     }
   }
-  return { feed, preview, all, setAll, busy, error, refresh, mark };
+  return {
+    feed,
+    preview,
+    all,
+    setAll,
+    busy,
+    error,
+    refresh,
+    mark,
+    ready: Boolean(user && fetchedFor === user),
+  };
 }
 export function ActivityCenter({
   user,
@@ -360,9 +382,17 @@ export function ActivityCenter({
     { feed, preview, all, setAll, busy, error, refresh, mark } = state;
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  usePushActivity(user, feed.unread, state.ready && !busy && !error);
   useEffect(() => {
     if (!user) setOpen(false);
-  }, [user]);
+    else if (params.get("updates") === "1") {
+      setOpen(true);
+      const next = new URLSearchParams(params);
+      next.delete("updates");
+      setParams(next, { replace: true });
+    }
+  }, [user, params, setParams]);
   if (!user) return null;
   async function visit(item: Activity, ids: number[]) {
     if (!(await mark(ids))) return;

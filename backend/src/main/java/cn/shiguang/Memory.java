@@ -16,6 +16,8 @@ class Memory {
  boolean publicVisible=false;
  @Column(nullable=false,length=500) String publicSummary="";
  String author;
+ Short authorId;
+ Instant publishedAt;
  Instant deletedAt;
  Instant updatedAt=Instant.now();
  protected Memory(){}

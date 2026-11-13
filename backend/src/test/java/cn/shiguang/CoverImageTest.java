@@ -16,6 +16,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(SiteSettingController.class)
 @Import(SecurityConfig.class)
 class CoverImageTest {
+ @org.springframework.test.context.bean.override.mockito.MockitoBean PostSettings posts;
+
  @Autowired MockMvc mvc;
  @MockitoBean ActivityService activity;
  @MockitoBean SiteSettingRepository settings;

@@ -18,12 +18,14 @@ import java.util.Base64;
 
 @RestController @RequestMapping("/api/v1")
 class SiteSettingController {
- private static final Set<String> KEYS=Set.of("cover","messages","wishes","garden","gacha","albums");
+ private static final Set<String> KEYS=Set.of("cover","messages","wishes","garden","gacha");
  private final SiteSettingRepository repo;
  private final PrivacyService privacy;
  private final ActivityService activity;
- SiteSettingController(SiteSettingRepository repo,PrivacyService privacy,ActivityService activity){this.repo=repo;this.privacy=privacy;this.activity=activity;}
- record Value(@NotNull @Size(max=50_000_000) String value){}
+ private final PostSettings posts;
+ private final AccountRepository accounts;
+ SiteSettingController(SiteSettingRepository repo,PrivacyService privacy,ActivityService activity,PostSettings posts,AccountRepository accounts){this.repo=repo;this.privacy=privacy;this.activity=activity;this.posts=posts;this.accounts=accounts;}
+ record Value(@NotNull @Size(max=50_000_000) String value,String revision){Value(String value){this(value,null);}}
  private void valid(String key){if(!KEYS.contains(key))throw new ResponseStatusException(HttpStatus.NOT_FOUND);}
  @GetMapping("/public/settings/cover") Value publicCover(){privacy.requirePublic("home");return new Value(repo.findById("cover").map(x->x.value).orElse(""));}
  @GetMapping("/public/media/cover") ResponseEntity<byte[]> publicCoverImage(WebRequest request){
@@ -46,14 +48,32 @@ class SiteSettingController {
     .contentType(MediaType.parseMediaType(header.substring(5,header.indexOf(';')))).body(bytes);
   } catch(Exception e){throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,"封面图片格式无效",e);}
  }
- @GetMapping("/public/settings/albums") Value publicAlbums(){privacy.requirePublic("albums");return new Value(repo.findById("albums").map(x->x.value).orElse(""));}
- @GetMapping("/settings/{key}") Value get(@PathVariable String key){valid(key);return new Value(repo.findById(key).map(x->x.value).orElse(""));}
+ @GetMapping("/settings/{key}") Value get(@PathVariable String key){
+  valid(key);
+  var item=repo.findById(key);
+  String value=item.map(x->x.value).orElse("");
+  if(!PostSettings.handles(key))return new Value(value);
+  return new Value(posts.read(key,value).toString(),item.map(x->x.updatedAt.toString()).orElse(""));
+ }
  @org.springframework.transaction.annotation.Transactional
  @PutMapping("/settings/{key}") Value put(@PathVariable String key,@Valid @RequestBody Value input,Principal principal){
   valid(key);
-  SiteSetting item=repo.findById(key).orElseGet(()->new SiteSetting(key,"",principal.getName()));
-  activity.settings(key,item.value,input.value());
-  item.value=input.value();item.updatedAt=Instant.now();item.updatedBy=principal.getName();repo.save(item);
-  return input;
+  boolean post=PostSettings.handles(key);
+  if(post)posts.lock(key);
+  var existing=repo.findById(key);
+  String revision=existing.map(x->x.updatedAt.toString()).orElse("");
+  if(post&&input.revision()!=null&&!revision.equals(input.revision()))
+   throw new ResponseStatusException(HttpStatus.CONFLICT,"内容刚被更新，已为你重新载入，请再试一次");
+  SiteSetting item=existing.orElseGet(()->new SiteSetting(key,"",principal.getName()));
+  String value=input.value(), before=item.value;
+  if(post){
+   short actor=accounts.findByUsername(principal.getName()).orElseThrow(()->new ResponseStatusException(HttpStatus.UNAUTHORIZED)).id;
+   var previous=posts.read(key,before);
+   value=posts.update(key,previous,value,actor).toString();
+   before=previous.toString();
+  }
+  activity.settings(key,before,value);
+  item.value=value;item.updatedAt=Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS);item.updatedBy=principal.getName();repo.save(item);
+  return new Value(value,post?item.updatedAt.toString():null);
  }
 }

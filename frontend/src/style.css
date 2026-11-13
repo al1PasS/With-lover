@@ -2693,3 +2693,56 @@ footer {
   .site-header .profile { width: 32px; height: 32px; margin: 0 2px; }
 }
 @media (prefers-reduced-motion: reduce) { .music-note { animation: none !important; } }
+
+/* Post bylines, conversation, and album actions */
+.memory-byline, .entry-stream article > .entry-meta {
+  display: flex; justify-content: flex-start; align-items: baseline; gap: 5px 12px; flex-wrap: wrap;
+  color: var(--muted); font-size: .8rem; line-height: 1.5;
+}
+.memory-byline time, .entry-meta time { font-variant-numeric: tabular-nums; }
+.memory-discuss { display: grid; place-items: center; min-width: 44px; min-height: 44px; color: var(--accent); }
+.entry-stream article { min-width: 0; padding: 20px; }
+.entry-stream article > .entry-meta { padding-right: 42px; }
+.entry-stream article > button { top: 8px; right: 8px; width: 44px; height: 44px; }
+.entry-stream article > p { overflow-wrap: anywhere; }
+.post-interactions { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 7px; min-width: 0; }
+.post-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.post-actions button { display: inline-flex; align-items: center; gap: 7px; min-height: 44px; padding: 0 12px; border-radius: 8px; color: var(--muted); font-size: .875rem; }
+.post-actions button svg { width: 18px; height: 18px; }
+.post-actions button[aria-pressed="true"], .post-actions button[aria-expanded="true"], .post-actions button:hover { color: var(--accent); background: var(--soft); }
+.post-comments { margin-top: 10px; }
+.post-comments[hidden] { display: none; }
+.post-comments form { display: grid; justify-items: start; gap: 8px; }
+.post-comments label { color: var(--text); font-size: .875rem; }
+.post-comments textarea { width: 100%; min-width: 0; padding: 10px 12px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--bg); font-size: 1rem; }
+.post-comments ul { list-style: none; padding: 0; margin: 12px 0; }
+.post-comments li { padding: 12px 0; border-top: 1px solid var(--line); }
+.post-comments li > div { display: flex; flex-wrap: wrap; gap: 5px 12px; align-items: baseline; color: var(--muted); font-size: .8rem; }
+.post-comments li strong { color: var(--text); }
+.post-comments li p { margin: 5px 0 0; color: var(--text); font-size: .9rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.post-comments > p { margin-top: 12px; color: var(--muted); font-size: .875rem; }
+.post-comments > button, .post-feedback button { min-height: 44px; text-decoration: underline; }
+.post-feedback { color: var(--accent); font-size: .875rem; line-height: 1.5; overflow-wrap: anywhere; }
+.wish-copy { flex: 1; min-width: 0; display: grid; gap: 3px; overflow-wrap: anywhere; }
+.wish-copy > span { font-size: .9rem; }
+.wish-copy > small { color: var(--muted); font-size: .8rem; }
+.wish-list .done .wish-copy > span { color: var(--muted); text-decoration: line-through; }
+.wish-list .wish-check { width: 44px; height: 44px; flex-shrink: 0; border: 0; position: relative; z-index: 0; background: transparent; }
+.wish-list .wish-check::before { content: ""; position: absolute; z-index: -1; inset: 9px; border: 1px solid var(--accent); border-radius: 50%; }
+.wish-list .done .wish-check { background: transparent; }
+.wish-list .done .wish-check::before { background: var(--accent); }
+.wish-list .wish-delete { width: 44px; height: 44px; flex-shrink: 0; }
+.album-photo-grid button::after { content: none; }
+.album-photo-grid button > .album-cover-tag { display: inline-flex; align-items: center; gap: 5px; width: max-content; right: auto; padding: 5px 9px; border-radius: 6px; background: var(--surface); color: var(--text); }
+.album-cover-tag svg { width: 14px; height: 14px; }
+.album-photo-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 15px; }
+.album-photo-actions > button, .album-add { min-height: 44px; }
+.album-add:focus-within { outline: 2px solid var(--accent); outline-offset: 3px; }
+.album-photo-actions > .album-photo-delete { margin: 0; padding: 0 8px; }
+.album-detail { max-height: 88dvh; overflow: auto; }
+.album-feedback { margin: 8px 0 14px; font-size: .875rem; }
+.push-settings { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.push-settings h2 { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; margin: 0 0 6px; }
+.push-settings h2 svg { color: var(--accent); }
+.push-settings p { color: var(--muted); font-size: .875rem; margin: 0; }
+.push-settings > button, .post-comments .primary { min-height: 44px; }
