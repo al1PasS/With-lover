@@ -4,6 +4,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import SilkCursorTrail from "./SilkCursorTrail";
 import "./style.css";
+import "./castle.css";
 function StartupReady() {
   React.useEffect(() => {
     document.getElementById("root")?.setAttribute("data-app-ready", "true");

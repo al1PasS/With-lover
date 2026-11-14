@@ -10,6 +10,73 @@ test.use({
   viewport: { width: 375, height: 812 },
 });
 
+test("a touch hold reorders the album while a quick swipe scrolls and a tap opens the photo", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem("shiguang:albums")) return;
+    sessionStorage.setItem("shiguang:demo-user", "测试成员");
+    const photos = Array.from({ length: 10 }, (_, index) => ({
+      id: `reorder-${index}`,
+      src: "/images/cover.webp",
+      thumbnail: "/images/cover.webp",
+      note: `照片内容 ${index + 1}`,
+      date: "2026-01-01",
+    }));
+    localStorage.setItem("shiguang:albums", JSON.stringify([{
+      id: "reorder-album",
+      title: "可排序相册",
+      description: "",
+      category: "event",
+      date: "2026-01-01",
+      coverId: photos[1].id,
+      photos,
+    }]));
+  });
+  await page.goto("/albums/reorder-album");
+  const grid = page.getByRole("region", { name: "相册照片" });
+  const first = grid.locator("#activity-reorder-0");
+  const second = grid.locator("#activity-reorder-1");
+  const getOrder = () => grid.getByRole("button").evaluateAll((tiles) => tiles.map((tile) => tile.id));
+  const cdp = await page.context().newCDPSession(page);
+  const centerOf = async (tile: typeof first) => {
+    const box = (await tile.boundingBox())!;
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  };
+  await first.scrollIntoViewIfNeeded();
+  const scrollStart = await page.evaluate(() => scrollY);
+  await swipe(cdp, await centerOf(first), 0, -170);
+  await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(scrollStart);
+  await expect(first).toHaveAccessibleName("查看第 1 张照片");
+  await first.scrollIntoViewIfNeeded();
+
+  const start = await centerOf(first);
+  const target = await centerOf(second);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [start] });
+  await expect(grid).toHaveClass(/is-sorting/);
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [target] });
+  await expect(page.locator(".album-drag-preview")).toContainText("第 2 位");
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(page.getByRole("status").filter({ hasText: "已保存照片顺序" })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect((await getOrder()).slice(0, 2)).toEqual(["activity-reorder-1", "activity-reorder-0"]);
+
+  await page.reload();
+  await expect(second).toHaveAccessibleName("查看第 1 张照片，封面");
+  await first.tap();
+  const viewer = page.getByRole("dialog");
+  await expect(viewer.getByRole("heading")).toHaveText("照片 2 / 10");
+  await viewer.getByRole("button", { name: "前移", exact: true }).tap();
+  await expect(viewer.getByRole("heading")).toHaveText("照片 1 / 10");
+  await viewer.getByRole("button", { name: "关闭照片" }).tap();
+  await expect(second).toHaveAccessibleName("查看第 2 张照片，封面");
+  await expect(first).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(grid).toHaveClass(/is-sorting/);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".album-drag-preview")).toContainText("第 2 位");
+  await page.keyboard.press("Space");
+  await expect(first).toHaveAccessibleName("查看第 2 张照片");
+});
+
 async function swipe(
   cdp: CDPSession,
   start: { x: number; y: number },

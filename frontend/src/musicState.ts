@@ -38,7 +38,7 @@ export function formatMusicBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toLocaleString("zh-CN", { maximumFractionDigits: 1 })} MiB`;
 }
 export type PlaybackState =
-  "empty" | "off" | "loading" | "playing" | "blocked" | "error";
+  "empty" | "off" | "loading" | "starting" | "playing" | "blocked" | "error";
 export type Playback = { enabled: boolean; state: PlaybackState };
 
 /** Owns playback intent separately from media events. Never treats play() as proof of sound. */
@@ -72,10 +72,15 @@ export class BackgroundPlayer {
       if (this.live() && this.actualPlayback && !audio.paused)
         this.publish(audio.muted || audio.volume === 0 ? "loading" : "playing");
     });
-    for (const event of ["pause", "waiting", "stalled", "ended"])
+    for (const event of ["pause", "waiting", "ended"])
       listen(event, () => {
         this.actualPlayback = false;
-        if (this.live() && this.state !== "blocked" && this.state !== "error")
+        if (
+          this.live() &&
+          this.state !== "blocked" &&
+          this.state !== "error" &&
+          (this.state !== "starting" || (event === "pause" && audio.paused))
+        )
           this.publish("loading");
       });
     listen("error", () => {
@@ -102,54 +107,45 @@ export class BackgroundPlayer {
     this.actualPlayback = false;
     this.source = "";
     this.audio.pause();
-    this.audio.removeAttribute("src");
-    this.audio.load();
     this.source = source;
-    if (source) this.audio.setAttribute("src", source);
+    if (source) {
+      this.audio.setAttribute("src", source);
+    } else {
+      this.audio.removeAttribute("src");
+      this.audio.load();
+    }
     this.publish(!source ? "empty" : this.enabled ? "loading" : "off");
     if (source && this.enabled) this.play();
   }
   toggle() {
     if (this.disposed || !this.source) return;
-    // A blocked/buffering/failed player is retried directly inside the user gesture.
-    if (this.enabled && this.state === "playing") {
+    if (this.state === "playing" || this.state === "starting") {
       this.enabled = false;
       ++this.generation;
       this.audio.pause();
       this.publish("off");
-    } else if (
-      !this.enabled ||
-      this.state === "blocked" ||
-      this.state === "error"
-    ) {
-      this.enabled = true;
-      this.play();
-    } else {
-      this.enabled = false;
-      ++this.generation;
-      this.audio.pause();
-      this.publish("off");
+      return;
     }
+    // Mobile browsers may leave the first play pending until a tap.
+    if (this.state === "error") this.audio.load();
+    this.enabled = true;
+    this.play(true);
   }
-  private play() {
+  private play(userGesture = false) {
     const generation = ++this.generation;
-    this.publish("loading");
+    this.publish(userGesture ? "starting" : "loading");
+    const failed = (error: unknown) => {
+      if (generation !== this.generation || !this.live()) return;
+      this.publish(
+        error instanceof Error && error.name === "NotAllowedError"
+          ? "blocked"
+          : "error",
+      );
+    };
     try {
-      void this.audio.play().catch((error: unknown) => {
-        if (generation !== this.generation || !this.live()) return;
-        this.publish(
-          error instanceof Error && error.name === "NotAllowedError"
-            ? "blocked"
-            : "error",
-        );
-      });
+      void this.audio.play()?.catch(failed);
     } catch (error) {
-      if (generation === this.generation && this.live())
-        this.publish(
-          error instanceof Error && error.name === "NotAllowedError"
-            ? "blocked"
-            : "error",
-        );
+      failed(error);
     }
   }
   dispose() {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Bell, BellSlash } from "@phosphor-icons/react";
-import { request } from "./api/client";
+import { Link } from "react-router-dom";
+import { ApiError, request } from "./api/client";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
 const tag = "shiguang-updates";
@@ -9,7 +10,23 @@ function registration() {
   if (!worker) {
     worker = navigator.serviceWorker
       .register("/sw.js")
-      .then(() => navigator.serviceWorker.ready)
+      .then((reg) => {
+        const pending = reg.installing || reg.waiting;
+        if (reg.active || !pending) return reg;
+        return new Promise<ServiceWorkerRegistration>((resolve, reject) => {
+          const check = () => {
+            if (pending.state === "activated") {
+              pending.removeEventListener("statechange", check);
+              resolve(reg);
+            } else if (pending.state === "redundant") {
+              pending.removeEventListener("statechange", check);
+              reject(new Error("Notification worker failed to activate"));
+            }
+          };
+          pending.addEventListener("statechange", check);
+          check();
+        });
+      })
       .catch((error) => {
         worker = undefined;
         throw error;
@@ -17,14 +34,19 @@ function registration() {
   }
   return worker;
 }
-function supported() {
-  return (
-    !demo &&
-    window.isSecureContext &&
-    "serviceWorker" in navigator &&
-    "PushManager" in window &&
-    "Notification" in window
-  );
+function canRegisterWorker() {
+  return !demo && window.isSecureContext && Boolean(navigator.serviceWorker);
+}
+function unsupportedHint() {
+  const platform = navigator.userAgent;
+  if (/Android/i.test(platform))
+    return "当前浏览器无法接收系统通知。可以用支持网站通知的浏览器（如 Chrome）打开拾光，登录后开启。";
+  if (
+    /iPhone|iPad|iPod/i.test(platform) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+  )
+    return "请在 Safari 将拾光添加到主屏幕，再从图标打开并登录，在这里开启通知。";
+  return "当前浏览器无法接收系统通知，可以用支持网站通知的浏览器打开拾光。";
 }
 function base64(value: string) {
   return Uint8Array.from(
@@ -47,7 +69,7 @@ export function syncAppBadge(unread: number) {
 }
 export function clearAppNotifications() {
   syncAppBadge(0);
-  if (!demo && "serviceWorker" in navigator)
+  if (canRegisterWorker())
     void navigator.serviceWorker
       .getRegistration()
       .then(async (reg) => {
@@ -59,7 +81,8 @@ export function clearAppNotifications() {
 
 type Config = { publicKey: string; enabled: boolean };
 export function PushSettings() {
-  const canEnable = supported();
+  const canRegister = canRegisterWorker();
+  const [unsupported, setUnsupported] = useState(false);
   const [configuration, setConfiguration] = useState<{
     config: Config;
     registration: ServiceWorkerRegistration;
@@ -69,20 +92,31 @@ export function PushSettings() {
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (!canEnable) return;
+    if (!canRegister) return;
     const controller = new AbortController();
     setError("");
-    void Promise.all([
-      registration(),
-      request<Config>("/push", { signal: controller.signal }),
-    ])
-      .then(async ([reg, config]) => {
+    void registration()
+      .then(async (reg) => {
+        if (controller.signal.aborted) return;
+        if (
+          typeof reg.pushManager?.subscribe !== "function" ||
+          typeof reg.pushManager?.getSubscription !== "function" ||
+          typeof reg.showNotification !== "function"
+        ) {
+          setUnsupported(true);
+          return;
+        }
+        const config = await request<Config>("/push", {
+          signal: controller.signal,
+        });
         const sub = await reg.pushManager.getSubscription();
         if (!controller.signal.aborted) {
           setConfiguration({ config, registration: reg });
           setEnabled(
             Boolean(
-              config.enabled && sub && Notification.permission === "granted",
+              config.enabled &&
+              sub &&
+              (!window.Notification || Notification.permission === "granted"),
             ),
           );
         }
@@ -91,7 +125,7 @@ export function PushSettings() {
         if (!controller.signal.aborted) setError("暂时无法连接通知服务");
       });
     return () => controller.abort();
-  }, [canEnable, retry]);
+  }, [canRegister, retry]);
 
   async function toggle() {
     if (!configuration || busy) return;
@@ -121,17 +155,25 @@ export function PushSettings() {
           }),
         });
         setEnabled(true);
-        window.dispatchEvent(new Event("shiguang:activity-changed"));
       }
     } catch (e) {
-      setError(
-        Notification.permission === "denied"
-          ? "通知权限已关闭，可以在系统或浏览器的通知设置中重新允许。"
-          : e instanceof Error && e.name === "InvalidStateError"
-            ? "订阅已失效，请重试。"
-            : "设置通知失败，请稍后再试。",
-      );
-      if (e instanceof Error && e.name === "InvalidStateError")
+      const name = e instanceof Error ? e.name : "";
+      const denied = window.Notification?.permission === "denied";
+      const incompatible =
+        name === "NotSupportedError" ||
+        (e instanceof ApiError && e.status === 400);
+      if (incompatible) setUnsupported(true);
+      else
+        setError(
+          denied
+            ? "请在浏览器的网站权限中允许通知，也检查手机系统是否允许该浏览器发通知。"
+            : name === "InvalidStateError"
+              ? "订阅已失效，请重试。"
+              : name === "NotAllowedError"
+                ? "开启通知时请选择允许。也可以检查浏览器和系统的通知权限。"
+                : "暂时无法连接推送服务，请检查网络后重试。",
+        );
+      if (name === "InvalidStateError")
         await reg.pushManager
           .getSubscription()
           .then((sub) => sub?.unsubscribe())
@@ -142,6 +184,7 @@ export function PushSettings() {
   }
 
   if (demo) return null;
+  const unavailable = !canRegister || unsupported;
   return (
     <section className="push-settings" aria-labelledby="push-heading">
       <div>
@@ -149,19 +192,26 @@ export function PushSettings() {
           <Bell aria-hidden="true" />
           消息提醒
         </h2>
-        <p>
-          {enabled
-            ? "此设备已开启提醒。对方有新动态时，系统会提示你。"
-            : "开启后，即使没有打开拾光，也能收到对方的更新提醒。"}
-        </p>
-        {!canEnable && (
+        {unavailable ? (
+          <>
+            <p>
+              {window.isSecureContext
+                ? unsupportedHint()
+                : "系统通知需要通过 HTTPS 打开拾光。"}
+            </p>
+            <Link className="subtle-link" to="/?updates=1">
+              查看最近更新
+            </Link>
+          </>
+        ) : (
           <p>
-            当前浏览器无法开启系统通知。iPhone 或 iPad 可先从 Safari
-            将拾光添加到主屏幕，再从图标打开并登录。
+            {enabled
+              ? "此浏览器已开启系统通知。"
+              : "开启后，即使没有打开拾光，也能收到对方的更新提醒。"}
           </p>
         )}
       </div>
-      {canEnable && (
+      {!unavailable && (
         <button
           className={enabled ? "subtle-link" : "primary"}
           disabled={busy || !configuration}
@@ -172,7 +222,13 @@ export function PushSettings() {
           ) : (
             <Bell aria-hidden="true" />
           )}
-          {busy ? "正在设置…" : enabled ? "关闭此设备的通知" : "开启系统通知"}
+          {busy
+            ? "正在设置…"
+            : !configuration && !error
+              ? "正在检查通知支持…"
+              : enabled
+                ? "关闭此设备的通知"
+                : "开启系统通知"}
         </button>
       )}
       {error && (
@@ -197,7 +253,7 @@ export function usePushActivity(
       clearAppNotifications();
       return;
     }
-    if (!supported()) return;
+    if (!canRegisterWorker()) return;
     void registration().catch(() => {});
     const refresh = (event: MessageEvent) => {
       if (event.data?.type === "shiguang:push")

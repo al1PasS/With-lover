@@ -42,13 +42,29 @@ class ActivityIntegrationTest {
   String first="[{\"id\":\"album\",\"title\":\"海边\",\"photos\":[]}]";
   String photos="[{\"id\":\"album\",\"title\":\"海边\",\"photos\":[{\"id\":\"a\"},{\"id\":\"b\"}]}]";
   activity.settings("albums","",first);activity.settings("albums",first,photos);activity.settings("albums",photos,photos);
-  var feed=activity.feed("activity-two",false,null);assertEquals(2,feed.items().size());assertEquals("添加了 2 张照片",feed.items().getFirst().summary());assertEquals("/albums/album?activity=a",feed.items().getFirst().route());
+  var feed=activity.feed("activity-two",false,null);assertEquals(2,feed.items().size());assertEquals("添加了 2 张照片",feed.items().getFirst().summary());assertEquals("/albums/album",feed.items().getFirst().route());
+  assertEquals(new ActivityService.PhotoUpdate("added",List.of("a","b")),feed.items().getFirst().photoUpdate());
   activity.settings("albums",photos,"[]");assertTrue(activity.feed("activity-two",false,null).items().stream().allMatch(ActivityService.Item::deleted));
   activity.settings("albums","[]",first);assertFalse(activity.feed("activity-two",false,null).items().stream().anyMatch(ActivityService.Item::deleted));
   activity.settings("garden","{\"level\":1}","{\"level\":1,\"water\":90}");
   assertEquals(4,activity.feed("activity-two",false,null).items().size());
   activity.settings("wishes","[{\"id\":\"w\",\"text\":\"日出\",\"done\":false}]","[{\"id\":\"w\",\"text\":\"日出\",\"done\":true}]");
   assertEquals("completed",activity.feed("activity-two",false,null).items().getFirst().action());
+ }
+ @Test @Transactional void batchReadMarksOnlySelectedEventsForTheSessionAccount()throws Exception{
+  as("activity-two");activity.record("cover","cover","updated","封面","更换封面","/");
+  long own=activity.feed("activity-two",true,null).latestId();
+  as("activity-one");
+  for(int i=0;i<3;i++)activity.record("cover","cover","updated","封面","更换封面","/");
+  var items=activity.feed("activity-two",false,null).items();
+  var two=org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user("activity-two");
+  var csrf=org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf();
+  String input="{\"ids\":["+items.get(0).id()+","+items.get(2).id()+","+own+"]}";
+  for(int i=0;i<2;i++) mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/api/v1/activities/read").with(two).with(csrf).contentType("application/json").content(input))
+   .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isNoContent());
+  assertEquals(1,activity.unread("activity-two"));
+  assertEquals(1,activity.unread("activity-one"));
+  assertEquals(0,db.queryForObject("SELECT count(*) FROM activity_reads WHERE event_id=?",Integer.class,own));
  }
  @Test @Transactional void cursorPagesHaveNoDuplicates(){
   as("activity-one");for(int i=0;i<35;i++)activity.record("cover","cover","updated","封面","更换封面","/");

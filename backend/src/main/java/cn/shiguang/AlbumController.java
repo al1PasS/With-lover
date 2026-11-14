@@ -47,6 +47,10 @@ class AlbumController {
     record Cover(@NotBlank @Size(max=255) String photoId) {}
     @PutMapping("/albums/{id}/cover") @ResponseStatus(HttpStatus.NO_CONTENT)
     void cover(@PathVariable String id,@Valid @RequestBody Cover input) { albums.cover(id,input.photoId()); }
+    @PutMapping("/albums/{id}/photos/order")
+    AlbumService.Detail reorder(@PathVariable String id, @Valid @RequestBody AlbumService.PhotoOrder input) {
+        return albums.reorder(id, input);
+    }
     @DeleteMapping("/albums/{id}") @ResponseStatus(HttpStatus.NO_CONTENT)
     void delete(@PathVariable String id) { albums.delete(id); }
     @DeleteMapping("/albums/{id}/photos/{photo}") @ResponseStatus(HttpStatus.NO_CONTENT)

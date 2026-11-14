@@ -50,3 +50,18 @@
 - 相册元数据与图片分开读取，旧 JSON 原值作为恢复来源。新图片按 multipart 小批上传，压缩为 JPEG 并保存缩略图；只要相册访问获准才可读图。相册默认首图，可指定同一本相册的任意照片为封面。删除指定封面回退首图。
 - 真实会话持久 Cookie 有效期 400 天，打开网站时按天续期，退出和修改凭据仍撤销原会话。V12 的 Web Push 订阅关联 Spring Session，删除会话自动移除；服务端在动态事务提交后发送无正文的提示信号，Service Worker 只查实时未读并展示通用通知，不缓存私有内容。
 - `SharedFeaturesIntegrationTest` 使用原有独立数据库开关。真实浏览器验收使用隔离的 Vite 5174、API 和数据库；可用 `SHIGUANG_DEV_API` 配置 Vite 代理，执行 `SHARED_REAL_TEST=true npx playwright test shared-features.spec.ts --workers=1`，只用合成账号与照片。
+
+## 语音和移动端兼容（2026-11-14）
+- 记录盒语音继续使用私有 `messages` 现有存储格式。生产 Nginx 同源麦克风需要浏览器授权，`media-src` 允许同源媒体和语音使用的 `data:`。语音通过浏览器加载检查后可保存，备注可选。支持 AAC 录制时优先使用 AAC，否则保留浏览器实际录制格式。
+- 背景音乐自动播放等待或被拦截时，可从右上角或音乐面板点击播放。通知基于实际 Service Worker 注册能力检测，缺少 Web Push 时提供站内「最近更新」入口。
+- 移动兼容验收使用独立 Nginx 5174、API 和 PostgreSQL，按 `SharedFeaturesIntegrationTest` 的合成账号配置登录，执行 `MOBILE_MEDIA_REAL_TEST=true npx playwright test mobile-media.spec.ts --workers=1`。测试语音由合成音源驱动浏览器原生编码，通知用合成订阅；系统通知到达和 vivo 自带浏览器须用真机确认。
+
+## 城堡主题与相册排序（2026-11-14）
+- 首页场景在 `CastleScene.tsx` / `castle.css`。草莓粉 3D 卡通插画按屏宽加载，保留成员封面。浮灯和星尘可暂停，系统减少动态效果时静止。
+- 两位成员可长按、鼠标拖动或键盘移动照片，也可在大图中逐张前移和后移。手势操作在 `AlbumPhotoGrid.tsx`，与相册路由一同按需加载。
+- `PUT /api/v1/albums/{id}/photos/order` 在相册锁内核对原顺序并保存完整新顺序，冲突返回 409。复用原 `sort_order` 列，显式封面仍按照片 ID，自动封面跟随首图。顺序和动态一起提交，部署需同时更新前后端。
+
+## 动态跳转与相册封面（2026-11-14）
+- 点击动态先跳转，后台通过 `POST /activities/read` 一次保存相关事件的已读状态。回忆详情先显示加载状态并独立请求，详情加载期间延后回忆列表请求。
+- V13 为相册动态保存新增照片 ID 或所选封面 ID。相邻同一相册上传可按展示合并，进入后可查看涉及的照片和已移出数量。旧动态继续使用原来的定位链接。
+- 照片墙封面延迟加载相册已保存的高清版本（新上传最长边 1800px），照片网格使用原 640px 缩略图。无须重传已有照片。正式更新同时发布前后端，由 API 启动执行 V13。

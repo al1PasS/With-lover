@@ -2646,10 +2646,11 @@ footer {
 .music-demo { margin-bottom: 18px; }
 .music-current { display: flex; align-items: center; gap: 12px; padding: 16px; margin-bottom: 22px; background: var(--soft); border-radius: 8px; }
 .music-current > svg { color: var(--accent); width: 22px; height: 22px; }
-.music-current > div { flex: 1; min-width: 0; }
+.music-current-copy { flex: 1; min-width: 0; }
 .music-current strong { display: block; font-size: 14px; overflow-wrap: anywhere; }
 .music-current p { font-size: 12px; color: var(--muted); line-height: 1.8; margin-top: 4px; }
-.music-current > button { flex-shrink: 0; font-size: 12px; min-height: 44px; }
+.music-current-actions { display: flex; flex-wrap: wrap; gap: 0 12px; }
+.music-current-actions > button { font-size: 12px; min-height: 44px; }
 .music-upload { margin-bottom: 22px; }
 .music-upload fieldset { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) auto; gap: 16px; align-items: end; padding: 0; border: 0; min-width: 0; }
 .music-field { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
@@ -2695,7 +2696,7 @@ footer {
   .music-upload fieldset { grid-template-columns: minmax(0, 1fr); gap: 14px; }
   .music-upload .primary { justify-self: start; }
   .music-current { flex-wrap: wrap; padding: 12px; }
-  .music-current > button { margin-left: 34px; }
+  .music-current-actions { width: 100%; margin-left: 34px; }
   .music-track { flex-wrap: wrap; }
   .music-track-actions { width: 100%; padding-left: 32px; justify-content: flex-end; }
 }
@@ -2759,8 +2760,13 @@ footer {
 .album-photo-actions > .album-photo-delete { margin: 0; padding: 0 8px; }
 .album-detail { max-height: 88dvh; overflow: auto; }
 .album-feedback { margin: 8px 0 14px; font-size: .875rem; }
+.album-update-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; margin-bottom: 14px; }
+.album-update-heading h2 { margin: 0; font-size: 1.05rem; }
+.album-update-heading p { color: var(--muted); font-size: .875rem; margin-top: 6px; }
+.album-update-heading .subtle-link { min-height: 44px; padding-inline: 8px; color: var(--accent); }
 .push-settings { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0; padding: 20px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
 .push-settings h2 { display: flex; align-items: center; gap: 8px; font-size: 1.05rem; margin: 0 0 6px; }
 .push-settings h2 svg { color: var(--accent); }
 .push-settings p { color: var(--muted); font-size: .875rem; margin: 0; }
-.push-settings > button, .post-comments .primary { min-height: 44px; }
+.push-settings > button, .push-settings .subtle-link, .post-comments .primary { min-height: 44px; }
+.push-settings a.subtle-link { display: inline-flex; align-items: center; }

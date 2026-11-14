@@ -114,12 +114,19 @@ class SharedFeaturesIntegrationTest {
             .andExpect(jsonPath("$.rejected[1]").value(3))
             .andExpect(jsonPath("$.photos[0].title").doesNotExist()));
         String first=uploaded.path("photos").get(0).path("id").asText(), cover=uploaded.path("photos").get(1).path("id").asText();
+        mvc.perform(get("/api/v1/activities").with(two)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].photoUpdate.kind").value("added"))
+            .andExpect(jsonPath("$.items[0].photoUpdate.photoIds[0]").value(first))
+            .andExpect(jsonPath("$.items[0].photoUpdate.photoIds[1]").value(cover));
         String image=uploaded.path("photos").get(1).path("thumbnail").asText();
         mvc.perform(get(java.net.URI.create(image)).with(two)).andExpect(status().isOk()).andExpect(content().contentType("image/jpeg"))
             .andExpect(header().string("Cache-Control","private, no-store")).andExpect(header().string("Content-Disposition","inline"));
         mvc.perform(get(java.net.URI.create(image))).andExpect(status().isUnauthorized());
         mvc.perform(put(path+"/cover").with(two).with(csrf()).contentType("application/json").content(json.writeValueAsString(Map.of("photoId",cover))))
             .andExpect(status().isNoContent());
+        mvc.perform(get("/api/v1/activities").with(one)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.items[0].photoUpdate.kind").value("cover"))
+            .andExpect(jsonPath("$.items[0].photoUpdate.photoIds[0]").value(cover));
         mvc.perform(get("/api/v1/albums").with(one)).andExpect(status().isOk()).andExpect(jsonPath("$[0].cover.id").value(cover));
         String publicImage=image.replace("/v1/","/v1/public/");
         var privacy=new PrivacyService.Policy("SELECTED",true,true,false,true,false);
@@ -154,5 +161,42 @@ class SharedFeaturesIntegrationTest {
         mvc.perform(post("/api/v1/auth/logout").cookie(reopened).header("X-CSRF-TOKEN",csrf)).andExpect(status().isNoContent());
         mvc.perform(get("/api/v1/push/status").cookie(reopened)).andExpect(status().isUnauthorized());
         assertEquals(0,db.queryForObject("SELECT count(*) FROM web_push_subscriptions WHERE endpoint=?",Integer.class,push.get("endpoint")));
+    }
+
+    @Test @Transactional void photoOrderIsPrivateAtomicAndPreservesExplicitCover() throws Exception {
+        String id = java.util.UUID.randomUUID().toString();
+        db.update("INSERT INTO album_collections(id,title,description,category,album_date,cover_id) VALUES(?,?,'','event','2026-11-14','b')", id, "排序测试");
+        for (int i = 0; i < 3; i++) {
+            String photo = String.valueOf((char) ('a' + i));
+            db.update("""
+                INSERT INTO album_photos(album_id,id,photo_date,static_src,sort_order)
+                VALUES(?,?,'2026-11-14','/images/cover.webp',?)
+                """, id, photo, (i + 1) * 10);
+        }
+        String path = "/api/v1/albums/" + id + "/photos/order";
+        String original = "[\"a\",\"b\",\"c\"]";
+        String reordered = "[\"c\",\"a\",\"b\"]";
+        java.util.function.BiFunction<String, String, String> payload = (before, after) ->
+            "{\"previousPhotoIds\":" + before + ",\"photoIds\":" + after + "}";
+        var update = put(path).contentType("application/json").content(payload.apply(original, reordered));
+        mvc.perform(put(path).with(csrf()).contentType("application/json").content(payload.apply(original, reordered)))
+            .andExpect(status().isUnauthorized());
+        mvc.perform(update.with(two)).andExpect(status().isForbidden());
+        mvc.perform(put(path).with(two).with(csrf()).contentType("application/json")
+            .content(payload.apply(original, "[\"a\",\"a\",\"foreign\"]")))
+            .andExpect(status().isBadRequest());
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(put(path).with(two).with(csrf()).contentType("application/json").content(payload.apply(original, reordered)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.photos[0].id").value("c"))
+                .andExpect(jsonPath("$.album.cover.id").value("b"));
+        }
+        mvc.perform(put(path).with(one).with(csrf()).contentType("application/json")
+            .content(payload.apply(original, "[\"b\",\"c\",\"a\"]"))).andExpect(status().isConflict());
+        mvc.perform(get("/api/v1/albums/" + id).with(one)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.photos[0].id").value("c")).andExpect(jsonPath("$.photos[1].id").value("a"))
+            .andExpect(jsonPath("$.photos[2].id").value("b"));
+        assertEquals(1, db.queryForObject("""
+            SELECT count(*) FROM activity_events WHERE module='albums' AND target_id=? AND summary='调整了照片顺序'
+            """, Integer.class, id));
     }
 }

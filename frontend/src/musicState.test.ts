@@ -101,6 +101,7 @@ describe("background music playback intent and actual media state", () => {
   it("keeps local off even when the current song is cleared before another is selected", () => {
     const { audio, player, state } = setup();
     player.setSource("/song-a");
+    audio.dispatchEvent(new Event("playing"));
     player.toggle();
     player.setSource("");
     expect(state()).toEqual({ enabled: false, state: "empty" });
@@ -130,7 +131,20 @@ describe("background music playback intent and actual media state", () => {
     expect(state()).toEqual({ enabled: true, state: "blocked" });
     player.toggle();
     expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(state().state).toBe("starting");
+    audio.dispatchEvent(new Event("playing"));
+    expect(state().state).toBe("playing");
+  });
+  it("retries a pending autoplay on the first tap, including legacy play() without a promise", () => {
+    const { audio, player, state } = setup();
+    audio.play.mockImplementationOnce(() => new Promise(() => {}));
+    player.setSource("/song-a");
     expect(state().state).toBe("loading");
+    audio.play.mockReturnValueOnce(undefined as unknown as Promise<void>);
+    player.toggle();
+    expect(audio.play).toHaveBeenCalledTimes(2);
+    expect(state()).toEqual({ enabled: true, state: "starting" });
+    audio.paused = false;
     audio.dispatchEvent(new Event("playing"));
     expect(state().state).toBe("playing");
   });
@@ -160,6 +174,7 @@ describe("background music playback intent and actual media state", () => {
         }),
     );
     player.setSource("/song-a");
+    player.toggle();
     player.toggle();
     audio.paused = false;
     audio.dispatchEvent(new Event("playing"));
@@ -204,7 +219,8 @@ describe("background music playback intent and actual media state", () => {
     audio.dispatchEvent(new Event("error"));
     expect(state().state).toBe("error");
     player.toggle();
-    expect(state().state).toBe("loading");
+    expect(audio.load).toHaveBeenCalledOnce();
+    expect(state().state).toBe("starting");
   });
 });
 

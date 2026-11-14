@@ -25,6 +25,10 @@ class AlbumService {
     record Album(String id,String title,String description,String category,String date,String coverId,Photo cover,int photoCount) {}
     record Detail(Album album,List<Photo> photos) {}
     record Upload(List<Photo> photos,List<Integer> rejected) {}
+    record PhotoOrder(
+        @NotNull List<@NotBlank @Size(max=255) String> previousPhotoIds,
+        @NotNull List<@NotBlank @Size(max=255) String> photoIds
+    ) {}
     record Image(String mime,byte[] content,String redirect) {}
 
     List<Album> list(boolean publicRead) {
@@ -82,7 +86,7 @@ class AlbumService {
             added.add(photo(false,id,photo,"",date));
         }
         activity.record("albums",id,"updated",title,"添加了 "+added.size()+" 张照片",
-            ActivityService.route("albums",id)+"?activity="+added.getFirst().id());
+            ActivityService.route("albums",id),new ActivityService.PhotoUpdate("added",added.stream().map(Photo::id).toList()));
         return new Upload(added,rejected);
     }
 
@@ -90,7 +94,8 @@ class AlbumService {
         String title=lock(id);
         if (!db.queryForObject("SELECT EXISTS(SELECT 1 FROM album_photos WHERE album_id=? AND id=?)",Boolean.class,id,photo)) throw missing();
         if (db.update("UPDATE album_collections SET cover_id=? WHERE id=? AND cover_id IS DISTINCT FROM ?",photo,id,photo)>0)
-            activity.record("albums",id,"updated",title,"更换了相册封面",ActivityService.route("albums",id));
+            activity.record("albums",id,"updated",title,"更换了相册封面",ActivityService.route("albums",id),
+                new ActivityService.PhotoUpdate("cover",List.of(photo)));
     }
 
     @Transactional public void deletePhoto(String id,String photo) {
@@ -98,6 +103,27 @@ class AlbumService {
         if (db.update("DELETE FROM album_photos WHERE album_id=? AND id=?",id,photo)==0) throw missing();
         db.update("UPDATE album_collections SET cover_id=NULL WHERE id=? AND cover_id=?",id,photo);
         activity.record("albums",id,"updated",title,"移除了 1 张照片",ActivityService.route("albums",id));
+    }
+
+    @Transactional public Detail reorder(String id, PhotoOrder input) {
+        String title = lock(id);
+        var existing = db.queryForList("""
+            SELECT id FROM album_photos WHERE album_id=? ORDER BY sort_order,id
+            """, String.class, id);
+        var desired = input.photoIds();
+        if (existing.equals(desired)) return detail(id, false);
+        if (!existing.equals(input.previousPhotoIds()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "照片刚有变动，请按最新顺序重试");
+        if (desired.size() != existing.size() || !new HashSet<>(desired).equals(new HashSet<>(existing)))
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "排序须包含这本相册的全部照片，每张只能出现一次");
+
+        var changes = new ArrayList<Object[]>();
+        for (int index = 0; index < desired.size(); index++) {
+            changes.add(new Object[] { index + 1L, id, desired.get(index) });
+        }
+        db.batchUpdate("UPDATE album_photos SET sort_order=? WHERE album_id=? AND id=?", changes);
+        activity.record("albums", id, "updated", title, "调整了照片顺序", ActivityService.route("albums", id));
+        return detail(id, false);
     }
 
     @Transactional public void delete(String id) {

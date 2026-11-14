@@ -3,6 +3,7 @@ package cn.shiguang;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.SqlArrayValue;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,11 +18,19 @@ class ActivityService {
  private final org.springframework.context.ApplicationEventPublisher events;
  ActivityService(JdbcTemplate db,ObjectMapper mapper,org.springframework.context.ApplicationEventPublisher events){this.db=db;this.mapper=mapper;this.events=events;}
  record Recorded(long id){}
- record Item(long id,String actor,boolean mine,String module,String targetId,String action,String title,String summary,String route,String createdAt,boolean read,boolean deleted){}
+ record PhotoUpdate(String kind,List<String> photoIds){}
+ record Item(long id,String actor,boolean mine,String module,String targetId,String action,String title,String summary,String route,String createdAt,boolean read,boolean deleted,PhotoUpdate photoUpdate){}
  record Feed(List<Item> items,long unread,long latestId,Long nextCursor){}
  private String actor(){return SecurityContextHolder.getContext().getAuthentication().getName();}
  void record(String module,String target,String action,String title,String summary,String route){
-  Long id=db.queryForObject("INSERT INTO activity_events(actor,module,target_id,action,title,summary,route) VALUES (?,?,?,?,?,?,?) RETURNING id",Long.class,actor(),module,target,action,clip(title,255),clip(summary,500),route);
+  record(module,target,action,title,summary,route,null);
+ }
+ void record(String module,String target,String action,String title,String summary,String route,PhotoUpdate photos){
+  Long id=db.queryForObject("""
+   INSERT INTO activity_events(actor,module,target_id,action,title,summary,route,photo_change,photo_ids)
+   VALUES (?,?,?,?,?,?,?,?,?) RETURNING id
+   """,Long.class,actor(),module,target,action,clip(title,255),clip(summary,500),route,photos==null?null:photos.kind(),
+   new SqlArrayValue("text",photos==null?new Object[0]:photos.photoIds().toArray()));
   events.publishEvent(new Recorded(id));
  }
  private static String clip(String s,int n){return s==null?"":s.substring(0,Math.min(s.length(),n));}
@@ -48,7 +57,11 @@ class ActivityService {
     COALESCE((SELECT x.action='deleted' FROM activity_events x WHERE x.module=e.module AND x.target_id=e.target_id AND x.action NOT IN ('liked','commented') ORDER BY x.id DESC LIMIT 1),false) deleted
    FROM activity_events e LEFT JOIN accounts a ON a.username=e.actor
    WHERE (? OR e.actor<>?) AND e.id<? ORDER BY e.id DESC LIMIT 31
-   """,(rs,n)->new Item(rs.getLong("id"),rs.getString("nickname"),account.equals(rs.getString("actor")),rs.getString("module"),rs.getString("target_id"),rs.getString("action"),rs.getString("title"),rs.getString("summary"),rs.getString("route"),rs.getTimestamp("created_at").toInstant().toString(),rs.getBoolean("is_read")||account.equals(rs.getString("actor")),rs.getBoolean("deleted")),account,all,account,before==null?Long.MAX_VALUE:before);
+   """,(rs,n)->{
+    String kind=rs.getString("photo_change");
+    PhotoUpdate photos=kind==null?null:new PhotoUpdate(kind,List.of((String[])rs.getArray("photo_ids").getArray()));
+    return new Item(rs.getLong("id"),rs.getString("nickname"),account.equals(rs.getString("actor")),rs.getString("module"),rs.getString("target_id"),rs.getString("action"),rs.getString("title"),rs.getString("summary"),rs.getString("route"),rs.getTimestamp("created_at").toInstant().toString(),rs.getBoolean("is_read")||account.equals(rs.getString("actor")),rs.getBoolean("deleted"),photos);
+   },account,all,account,before==null?Long.MAX_VALUE:before);
   boolean more=items.size()>30;var visible=items.subList(0,Math.min(30,items.size()));
   return new Feed(visible,unread,latest,more?visible.get(visible.size()-1).id():null);
  }
@@ -57,6 +70,13 @@ class ActivityService {
   db.update("INSERT INTO activity_reads(account,event_id) VALUES (?,?) ON CONFLICT DO NOTHING",account,id);
  }
  @Transactional public void readAll(String account,long through){db.update("INSERT INTO activity_reads(account,event_id) SELECT ?,id FROM activity_events WHERE id<=? AND actor<>? ON CONFLICT DO NOTHING",account,through,account);}
+ @Transactional public void readBatch(String account,List<Long> ids){
+  db.update("""
+   INSERT INTO activity_reads(account,event_id)
+   SELECT ?,id FROM activity_events WHERE id = ANY (?) AND actor<>?
+   ON CONFLICT DO NOTHING
+   """,account,new SqlArrayValue("bigint",ids.toArray()),account);
+ }
 
  // Diff shared JSON collections at the server, never accept a client-supplied actor or summary.
  void settings(String key,String oldValue,String newValue){
@@ -78,12 +98,17 @@ class ActivityService {
     if(key.equals("wishes")&&before!=null&&item.path("done").asBoolean()!=before.path("done").asBoolean()){
      action=item.path("done").asBoolean()?"completed":"reopened";summary=action.equals("completed")?"完成了愿望":"重新开启了愿望";
     }
+    PhotoUpdate photoUpdate=null;
     if(key.equals("albums")&&before!=null){
      var oldPhotos=index(before.path("photos"));var photos=index(item.path("photos"));
-     long added=photos.keySet().stream().filter(x->!oldPhotos.containsKey(x)).count(),removed=oldPhotos.keySet().stream().filter(x->!photos.containsKey(x)).count();
-     if(added>0){summary="添加了 "+added+" 张照片";String photo=photos.keySet().stream().filter(x->!oldPhotos.containsKey(x)).findFirst().orElse("");destination+="?activity="+encoded(photo);}else if(removed>0)summary="移除了 "+removed+" 张照片";
+     var added=photos.keySet().stream().filter(x->!oldPhotos.containsKey(x)).toList();
+     long removed=oldPhotos.keySet().stream().filter(x->!photos.containsKey(x)).count();
+     if(!added.isEmpty()){
+      summary="添加了 "+added.size()+" 张照片";
+      photoUpdate=new PhotoUpdate("added",added);
+     }else if(removed>0)summary="移除了 "+removed+" 张照片";
     }
-    record(key,id,action,title,summary,destination);
+    record(key,id,action,title,summary,destination,photoUpdate);
    }
    for(var entry:previous.entrySet())if(!current.containsKey(entry.getKey()))record(key,entry.getKey(),"deleted",entry.getValue().path(key.equals("wishes")?"text":"title").asText("未命名内容"),"删除了"+label(key),route(key,entry.getKey()));
   }catch(com.fasterxml.jackson.core.JsonProcessingException e){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"内容格式无效");}

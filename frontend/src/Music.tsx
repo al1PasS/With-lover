@@ -339,9 +339,10 @@ const playbackText = {
   empty: "尚未选择歌曲，先上传并设置一首吧。",
   off: "此设备的音乐已关闭，不影响对方。",
   playing: "正在循环播放",
-  blocked: "浏览器暂停了自动播放，点击右上角音符开启音乐。",
-  loading: "正在准备播放…",
-  error: "音乐暂时无法播放，请点击右上角音符重试。",
+  blocked: "浏览器限制了自动播放，点击播放即可开启。",
+  loading: "正在准备音乐，也可以点击播放。",
+  starting: "正在连接音频…",
+  error: "音乐暂时无法播放，可以重试。",
 };
 export function MusicToggle({ music }: { music: MusicModel }) {
   const navigate = useNavigate();
@@ -355,9 +356,11 @@ export function MusicToggle({ music }: { music: MusicModel }) {
         ? "开启背景音乐"
         : state === "blocked"
           ? "点击开启音乐"
-          : state === "error"
-            ? "重试播放背景音乐"
-            : "关闭背景音乐";
+          : state === "loading"
+            ? "播放背景音乐"
+            : state === "error"
+              ? "重试播放背景音乐"
+              : "关闭背景音乐";
   const props = {
     className: `icon-button music-toggle ${state === "playing" ? "is-playing" : ""}`,
     "aria-label": label,
@@ -443,20 +446,28 @@ export function MusicPanel({ music }: { music: MusicModel }) {
       )}
       <div className="music-current" aria-live="polite">
         <MusicNote aria-hidden="true" />
-        <div>
+        <div className="music-current-copy">
           <strong>
             {selected ? `当前背景音乐：${selected.title}` : "还没有背景音乐"}
           </strong>
           <p>{playbackText[playback.state]}</p>
         </div>
         {selected && (
-          <button
-            className="subtle-link"
-            disabled={busy}
-            onClick={() => void music.select(null)}
-          >
-            清空选曲
-          </button>
+          <div className="music-current-actions">
+            {["off", "blocked", "loading", "error"].includes(playback.state) && (
+              <button type="button" className="subtle-link" onClick={music.toggle}>
+                {playback.state === "error" ? "重试播放" : "播放音乐"}
+              </button>
+            )}
+            <button
+              type="button"
+              className="subtle-link"
+              disabled={busy}
+              onClick={() => void music.select(null)}
+            >
+              清空选曲
+            </button>
+          </div>
         )}
       </div>
       <form className="music-upload" onSubmit={upload}>

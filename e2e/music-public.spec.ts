@@ -200,6 +200,10 @@ async function mockMusic(
           role: "ADMIN",
         },
       });
+    if (path === "/auth/members" && method === "GET" && state.signedIn)
+      return reply(route, { json: [{ id: 1, name: "合成音乐成员" }] });
+    if (path === "/push" && method === "GET" && state.signedIn)
+      return reply(route, { json: { publicKey: "", enabled: false } });
     if (path === "/activities")
       return reply(route, {
         json: { items: [], unread: 0, latestId: 0, nextCursor: null },

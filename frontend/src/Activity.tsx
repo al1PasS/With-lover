@@ -8,13 +8,14 @@ import {
   Check,
   ArrowClockwise,
 } from "@phosphor-icons/react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { request } from "./api/client";
 import { usePushActivity } from "./push";
 import { demoIdentity, demoMemberName } from "./members";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
 export type Activity = import("./api/schema").components["schemas"]["Activity"];
+type PhotoUpdate = NonNullable<Activity["photoUpdate"]>;
 type Feed = import("./api/schema").components["schemas"]["ActivityFeed"];
 const empty: Feed = { items: [], unread: 0, latestId: 0, nextCursor: null };
 const labels: Record<string, string> = {
@@ -43,6 +44,7 @@ export function demoActivity(
   title: string,
   summary: string,
   route: string,
+  photoUpdate?: PhotoUpdate,
 ) {
   if (!demo) return;
   const name = sessionStorage.getItem("shiguang:demo-user");
@@ -62,6 +64,7 @@ export function demoActivity(
     createdAt: new Date().toISOString(),
     read: false,
     deleted: false,
+    photoUpdate,
   });
   if (module === "music") demoMusicActivities.unshift(rows[0]);
   else
@@ -148,6 +151,7 @@ export function demoSettingActivity(
     title?: string;
     text?: string;
     done?: boolean;
+    coverId?: string | null;
     photos?: { id: string }[];
   };
   const previous = new Map<string, Row>(
@@ -167,21 +171,28 @@ export function demoSettingActivity(
       action = x.done ? "completed" : "reopened";
       summary = x.done ? "完成了愿望" : "重新开启了愿望";
     }
-    let destination = route(id);
+    let photoUpdate: PhotoUpdate | undefined;
     if (key === "albums" && old) {
       const added = (x.photos || []).filter(
           (p) => !old.photos?.some((y) => y.id === p.id),
-        ).length,
+        ),
         removed = (old.photos || []).filter(
           (p) => !x.photos?.some((y) => y.id === p.id),
         ).length;
-      if (added) {
-        summary = `添加了 ${added} 张照片`;
-        const photo = x.photos?.find(
-          (p) => !old.photos?.some((y) => y.id === p.id),
-        );
-        if (photo) destination += `?activity=${encodeURIComponent(photo.id)}`;
+      if (added.length) {
+        summary = `添加了 ${added.length} 张照片`;
+        photoUpdate = {
+          kind: "added",
+          photoIds: added.map((photo) => photo.id),
+        };
       } else if (removed) summary = `移除了 ${removed} 张照片`;
+      else if (x.coverId && x.coverId !== old.coverId) {
+        summary = "更换了相册封面";
+        photoUpdate = { kind: "cover", photoIds: [x.coverId] };
+      } else if (
+        x.photos?.some((photo, index) => photo.id !== old.photos?.[index]?.id)
+      )
+        summary = "调整了照片顺序";
     }
     demoActivity(
       key,
@@ -189,7 +200,8 @@ export function demoSettingActivity(
       action,
       x.title || x.text || "未命名内容",
       summary,
-      destination,
+      route(id),
+      photoUpdate,
     );
   }
   for (const [id, x] of previous)
@@ -203,14 +215,25 @@ export function demoSettingActivity(
         route(id),
       );
 }
-function time(value: string) {
-  return new Intl.DateTimeFormat("zh-CN", {
+let activityTime: Intl.DateTimeFormat | undefined;
+function formatActivityTime(value: string) {
+  activityTime ??= new Intl.DateTimeFormat("zh-CN", {
     timeZone: "Asia/Shanghai",
     month: "numeric",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-  }).format(new Date(value));
+  });
+  return activityTime.format(new Date(value));
+}
+
+function compatibleAlbumUpdates(a: Activity, b: Activity) {
+  if (a.module !== "albums") return true;
+  return (
+    a.photoUpdate?.kind === "added" &&
+    b.photoUpdate?.kind === "added" &&
+    a.photoUpdate.photoIds.length + b.photoUpdate.photoIds.length <= 25
+  );
 }
 function groups(items: Activity[]) {
   const result: { item: Activity; ids: number[]; read: boolean }[] = [];
@@ -220,17 +243,44 @@ function groups(items: Activity[]) {
       last &&
       item.action === "updated" &&
       last.item.action === "updated" &&
+      last.read === item.read &&
       item.actor === last.item.actor &&
       item.mine === last.item.mine &&
       item.module === last.item.module &&
       item.targetId === last.item.targetId &&
+      last.ids.length < 100 &&
+      compatibleAlbumUpdates(last.item, item) &&
       Date.parse(last.item.createdAt) - Date.parse(item.createdAt) < 300000
     ) {
       last.ids.push(item.id);
-      last.read &&= item.read;
+      if (
+        last.item.photoUpdate?.kind === "added" &&
+        item.photoUpdate?.kind === "added"
+      ) {
+        // Read separate bursts as one update, with photos in upload order.
+        const photoIds = [
+          ...new Set([
+            ...item.photoUpdate.photoIds,
+            ...last.item.photoUpdate.photoIds,
+          ]),
+        ];
+        last.item = {
+          ...last.item,
+          summary: `添加了 ${photoIds.length} 张照片`,
+          photoUpdate: { kind: "added", photoIds },
+        };
+      }
     } else result.push({ item, ids: [item.id], read: item.read });
   }
   return result;
+}
+
+function destination(item: Activity) {
+  if (!item.photoUpdate || item.module !== "albums") return item.route;
+  const params = new URLSearchParams();
+  params.set("photoChange", item.photoUpdate.kind);
+  for (const photo of item.photoUpdate.photoIds) params.append("photo", photo);
+  return `${item.route.split("?")[0]}?${params}`;
 }
 export function useActivities(user: string | null) {
   const [feed, setFeed] = useState<Feed>(empty),
@@ -239,6 +289,10 @@ export function useActivities(user: string | null) {
     [error, setError] = useState("");
   const [fetchedFor, setFetchedFor] = useState<string | null>(null);
   const [preview, setPreview] = useState<Activity[]>([]);
+  const [readFailure, setReadFailure] = useState<{
+    ids?: number[];
+    throughId: number;
+  }>();
   const generation = useRef(0),
     currentUser = useRef(user);
   currentUser.current = user;
@@ -253,11 +307,12 @@ export function useActivities(user: string | null) {
           : await request<Feed>(
               `/activities?all=${all}${before ? `&before=${before}` : ""}`,
             );
-        const recent = all
-          ? demo
-            ? demoFeed(user, false)
-            : await request<Feed>("/activities")
-          : next;
+        const recent =
+          all && !before
+            ? demo
+              ? demoFeed(user, false)
+              : await request<Feed>("/activities")
+            : next;
         if (token !== generation.current || currentUser.current !== user)
           return;
         if (!before) setPreview(recent.items.slice(0, 3));
@@ -283,6 +338,7 @@ export function useActivities(user: string | null) {
     setFetchedFor(null);
     setPreview([]);
     setError("");
+    setReadFailure(undefined);
     setBusy(false);
     if (!user) return;
     const update = () => {
@@ -303,8 +359,10 @@ export function useActivities(user: string | null) {
       window.removeEventListener("storage", update);
     };
   }, [refresh, user]);
-  async function mark(ids?: number[]) {
+  async function mark(ids?: number[], throughId = feed.latestId) {
     if (!user) return false;
+    const shouldRead = (item: Activity) =>
+      ids ? ids.includes(item.id) : item.id <= throughId;
     try {
       if (demo)
         localStorage.setItem(
@@ -314,44 +372,45 @@ export function useActivities(user: string | null) {
               ...demoRead(demoIdentity(user)),
               ...(ids ||
                 demoRows()
-                  .filter((x) => x.id <= feed.latestId)
+                  .filter((x) => x.id <= throughId)
                   .map((x) => x.id)),
             ]),
           ]),
         );
       else if (ids)
-        await Promise.all(
-          ids.map((id) =>
-            request(`/activities/${id}/read`, { method: "POST" }),
-          ),
-        );
+        await request("/activities/read", {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        });
       else
         await request("/activities/read-all", {
           method: "POST",
-          body: JSON.stringify({ throughId: feed.latestId }),
+          body: JSON.stringify({ throughId }),
         });
+      if (currentUser.current !== user) return false;
+      setError("");
+      setReadFailure(undefined);
       setFeed((prev) => ({
         ...prev,
         unread: Math.max(
           0,
           prev.unread -
-            prev.items.filter((x) => !x.read && (!ids || ids.includes(x.id)))
-              .length,
+            prev.items.filter((x) => !x.read && shouldRead(x)).length,
         ),
         items: prev.items.map((x) =>
-          !ids || ids.includes(x.id) ? { ...x, read: true } : x,
+          shouldRead(x) ? { ...x, read: true } : x,
         ),
       }));
       setPreview((prev) =>
-        prev.map((x) =>
-          !ids || ids.includes(x.id) ? { ...x, read: true } : x,
-        ),
+        prev.map((x) => (shouldRead(x) ? { ...x, read: true } : x)),
       );
       // Refresh the server count so writes arriving during mark-all stay unread.
       activityChanged();
       return true;
     } catch (e) {
-      setError((e as Error).message);
+      if (currentUser.current === user) {
+        setReadFailure({ ids, throughId });
+      }
       return false;
     }
   }
@@ -364,6 +423,7 @@ export function useActivities(user: string | null) {
     error,
     refresh,
     mark,
+    readFailure,
     ready: Boolean(user && fetchedFor === user),
   };
 }
@@ -381,7 +441,9 @@ export function ActivityCenter({
   const state = useActivities(user),
     { feed, preview, all, setAll, busy, error, refresh, mark } = state;
   const [open, setOpen] = useState(false);
+  const leaving = useRef(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   usePushActivity(user, feed.unread, state.ready && !busy && !error);
   useEffect(() => {
@@ -394,19 +456,36 @@ export function ActivityCenter({
     }
   }, [user, params, setParams]);
   if (!user) return null;
-  async function visit(item: Activity, ids: number[]) {
-    if (!(await mark(ids))) return;
+  function visit(item: Activity, ids: number[], read: boolean) {
     if (!item.deleted) {
+      leaving.current = open;
       setOpen(false);
-      navigate(item.route);
+      const path = destination(item);
+      if (path !== location.pathname + location.search || path.includes("?"))
+        navigate(path);
+      else if (item.module === "albums")
+        window.scrollTo({ top: 0, behavior: "instant" });
     }
+    if (!read) void mark(ids);
   }
+  const failedRead = state.readFailure;
+  const readFeedback = failedRead && (
+    <p className="post-feedback" role="alert">
+      暂时无法保存已读状态。{" "}
+      <button
+        type="button"
+        onClick={() => void mark(failedRead.ids, failedRead.throughId)}
+      >
+        重试标记已读
+      </button>
+    </p>
+  );
   const render = (items: Activity[]) =>
     groups(items).map(({ item, ids, read }) => (
       <button
         key={item.id}
         className={`activity-row ${read ? "" : "is-unread"}`}
-        onClick={() => void visit(item, ids)}
+        onClick={() => visit(item, ids, read)}
         aria-label={`${item.actor}，${item.summary}，${item.title}${read ? "" : "，未读"}`}
       >
         <span className="activity-avatar" aria-hidden="true">
@@ -424,8 +503,12 @@ export function ActivityCenter({
             {item.summary} · {item.title}
           </b>
           <small>
-            <time dateTime={item.createdAt}>{time(item.createdAt)}</time>
-            {ids.length > 1 && " · 已合并连续修改"}
+            <time dateTime={item.createdAt}>
+              {formatActivityTime(item.createdAt)}
+            </time>
+            {ids.length > 1 &&
+              item.photoUpdate?.kind !== "added" &&
+              " · 已合并连续修改"}
             {item.deleted && " · 内容已删除"}
           </small>
         </span>
@@ -473,6 +556,7 @@ export function ActivityCenter({
                 查看全部 <ArrowRight />
               </button>
             </div>
+            {readFeedback}
             {error ? (
               <p role="alert">
                 {error} <button onClick={() => void refresh()}>重试</button>
@@ -490,7 +574,13 @@ export function ActivityCenter({
       <Dialog.Root open={open} onOpenChange={setOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="overlay" />
-          <Dialog.Content className="activity-panel">
+          <Dialog.Content
+            className="activity-panel"
+            onCloseAutoFocus={(event) => {
+              if (leaving.current) event.preventDefault();
+              leaving.current = false;
+            }}
+          >
             <div className="activity-panel-top">
               <div>
                 <span className="small-caps">OUR LATEST MOMENTS</span>
@@ -527,6 +617,7 @@ export function ActivityCenter({
                 <button onClick={() => void refresh()}>重试</button>
               </div>
             )}
+            {readFeedback}
             <div className="activity-list" aria-busy={busy}>
               {render(feed.items)}
               {!feed.items.length && (

@@ -97,6 +97,11 @@ test("two members publish, react, rename and share album covers on mobile", asyn
   await page.screenshot({ path: testInfo.outputPath("mobile-album-cover.png"), animations: "disabled" });
   await partner.goto(albumURL);
   await expect(partner.getByRole("button", { name: "查看第 2 张照片，封面" })).toBeVisible();
+  await page.getByRole("button", { name: "前移", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("status")).toHaveText("已保存照片顺序");
+  await expect(page.getByRole("dialog").getByRole("heading")).toHaveText("照片 1 / 2");
+  await partner.reload();
+  await expect(partner.getByRole("button", { name: "查看第 1 张照片，封面" })).toBeVisible();
 
   const storage = await page.context().storageState();
   expect(storage.cookies.find(c => c.name === "SESSION")?.expires).toBeGreaterThan(Date.now() / 1000 + 86400);

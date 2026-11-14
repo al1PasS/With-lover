@@ -1,4 +1,4 @@
-import AlbumsPage from "./Albums";
+import CastleScene from "./CastleScene";
 import PostInteractions from "./PostInteractions";
 import {
   Members,
@@ -19,6 +19,8 @@ import {
   anniversaryDays,
 } from "./profile";
 import {
+  lazy,
+  Suspense,
   useEffect,
   useRef,
   useState,
@@ -38,7 +40,6 @@ import {
   ArrowUpRight,
   Sun,
   Moon,
-  Flower,
   Camera,
   CalendarBlank,
   LockSimple,
@@ -76,6 +77,8 @@ import {
 } from "./types";
 import { PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
 import { PHOTO_ACCEPT, photoDataUrl, preparePhoto } from "./imageUpload";
+const AlbumsPage = lazy(() => import("./Albums"));
+
 const nav = [
   ["/", "首页", House],
   ["/timeline", "时光", Clock],
@@ -310,9 +313,18 @@ export default function App() {
     () => matchMedia("(prefers-color-scheme: dark)").matches,
   );
   const [params, setParams] = useSearchParams();
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const q = params.get("q") || "",
     tag = params.get("tag") || "烟火日常";
+  const activityId = user ? params.get("activity") : null;
+  const memoryTarget = pathname === "/timeline" ? activityId : null;
+  const [activityMemory, setActivityMemory] = useState<{
+    key: string;
+    status: "loading" | "done" | "error";
+    message?: string;
+  }>();
+  const [activityMemoryRetry, retryActivityMemory] = useState(0);
   const visible = memories.filter(
     (m) => !m.deleted && (user || (m.published && m.publicVisible)),
   );
@@ -336,32 +348,37 @@ export default function App() {
       return () => clearTimeout(t);
     }
   }, [notice]);
-  const location = useLocation();
+  const memoryLoading = Boolean(
+    memoryTarget &&
+    (activityMemory?.key !== location.key || activityMemory.status === "loading"),
+  );
+  const memoryError =
+    memoryTarget && activityMemory?.key === location.key && activityMemory.status === "error"
+      ? activityMemory.message
+      : undefined;
   useEffect(() => {
-    if (!user || pathname !== "/timeline") return;
-    const id = new URLSearchParams(location.search).get("activity");
-    if (!id) return;
-    let active = true;
-    if (demo) {
-      const memory = memories.find((m) => m.id === id && !m.deleted);
-      if (memory) setSelected(memory);
-      else setNotice("这段回忆已经删除或不存在");
-    } else
-      void request<Memory>(`/memories/${encodeURIComponent(id)}`)
-        .then((memory) => {
-          if (active) setSelected(memory);
-        })
-        .catch((e) => {
-          if (active) setNotice((e as Error).message);
-        });
-    return () => {
-      active = false;
+    if (!memoryTarget) return;
+    const key = location.key;
+    const controller = new AbortController();
+    const done = (memory?: Memory, message?: string) => {
+      if (controller.signal.aborted) return;
+      setSelected(memory ?? null);
+      setActivityMemory({ key, status: message ? "error" : "done", message });
     };
-  }, [location.key, user]);
+    setSelected(null);
+    setActivityMemory({ key, status: "loading" });
+    if (demo) {
+      const memory = memories.find((m) => m.id === memoryTarget && !m.deleted);
+      done(memory, memory ? undefined : "这段回忆已经删除或不存在");
+    } else
+      void request<Memory>(`/memories/${encodeURIComponent(memoryTarget)}`, {
+        signal: controller.signal,
+      }).then((memory) => done(memory), (e: Error) => done(undefined, e.message));
+    return () => controller.abort();
+  }, [location.key, memoryTarget, activityMemoryRetry, user]);
   useEffect(() => {
-    if (!user) return;
-    const id = new URLSearchParams(location.search).get("activity");
-    if (!id || pathname === "/timeline") return;
+    if (!activityId || pathname === "/timeline" || pathname.startsWith("/albums/"))
+      return;
     if (
       !demo &&
       ((pathname === "/places" &&
@@ -372,23 +389,31 @@ export default function App() {
     )
       return;
     // The route loader also handles activity links; do not fetch the list twice.
+    const root = document.querySelector("main");
+    if (!root) return;
     const observer = new MutationObserver(() => focus());
+    let target: HTMLElement | null = null;
+    const timeout = setTimeout(() => observer.disconnect(), 8000);
     let timer: ReturnType<typeof setTimeout>;
     const focus = () => {
-      const el = document.getElementById(`activity-${id}`);
-      if (!el) return;
-      el.scrollIntoView({ block: "center", behavior: "instant" });
-      el.classList.add("activity-focus");
+      const el = document.getElementById(`activity-${activityId}`);
+      if (!el || !root.contains(el)) return;
+      target = el;
       observer.disconnect();
+      clearTimeout(timeout);
+      el.classList.add("activity-focus");
+      el.scrollIntoView({ block: "center", behavior: "instant" });
       timer = setTimeout(() => el.classList.remove("activity-focus"), 3000);
     };
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(root, { childList: true, subtree: true });
     focus();
     return () => {
       observer.disconnect();
+      clearTimeout(timeout);
       clearTimeout(timer);
+      target?.classList.remove("activity-focus");
     };
-  }, [location.key, user, pathname, placesLoading, anniversariesLoading]);
+  }, [location.key, activityId, pathname, placesLoading, anniversariesLoading]);
   async function load() {
     const generation = ++loadGeneration.current;
     resetResources();
@@ -434,7 +459,9 @@ export default function App() {
     const wanted = new Set<Resource>();
     const prefix = user ? "" : "/public";
     if (
-      ["/", "/timeline", "/admin"].includes(pathname) &&
+      (pathname === "/" ||
+        pathname === "/admin" ||
+        (pathname === "/timeline" && !memoryLoading)) &&
       (user || visitorCanView(privacy, "timeline"))
     )
       wanted.add("memories");
@@ -522,7 +549,7 @@ export default function App() {
       setPlacesLoading(resourceLoads.current.has("places"));
     }
     updateLoading();
-  }, [loaded, pathname, privacy, user, location.key, resourceRetry]);
+  }, [loaded, pathname, privacy, user, location.key, resourceRetry, memoryLoading]);
   function invalidateResources(...resources: Resource[]) {
     for (const resource of resources) cancelResource(resource);
     setResourceRetry((value) => value + 1);
@@ -1165,7 +1192,6 @@ export default function App() {
         ref={music.audioRef}
         data-testid="background-audio"
         aria-hidden="true"
-        hidden
       />
       <main>
         <ActivityCenter
@@ -1194,7 +1220,8 @@ export default function App() {
             {pathname === "/" &&
               (user || visitorCanView(privacy, "home") ? (
                 <>
-                  <section className="hero">
+                  <section className="hero castle-hero">
+                    <CastleScene />
                     <div className="hero-copy">
                       <div className="couple-label">
                         <span className="avatar">晴</span>
@@ -1238,7 +1265,6 @@ export default function App() {
                     </div>
                     <div className="hero-visual">
                       <div className="hero-photo">
-                        <div className="tape" />
                         {coverImage ? (
                           <img
                             src={coverImage}
@@ -1270,24 +1296,10 @@ export default function App() {
                           <Heart size={22} />
                         </div>
                       </div>
-                      <div className="date-sticker">
-                        <span>OUR DAYS</span>
-                        <strong>每一天</strong>
-                        <small>都想和你一起</small>
-                      </div>
-                      <Flower className="flower" size={58} weight="duotone" />
-                      <span className="hand-note">
-                        little moments, big love.
-                      </span>
                     </div>
                   </section>
                   {user && <div ref={setActivityHome} />}
-                  <div className="intro-divider">
-                    <Heart size={16} />
-                    <span>两个人的小事，就是我们的全世界</span>
-                    <span className="divider-line" />
-                  </div>
-                  <section className="world-menu" aria-label="我们的小功能">
+                  <section className="world-menu castle-rooms" aria-label="我们的小功能">
                     <Link to="/records" className="world-menu-main">
                       <ChatCircleDots weight="duotone" />
                       <span>
@@ -1464,17 +1476,21 @@ export default function App() {
                 />
               ))}
             {pathname.startsWith("/albums") && (
-              <AlbumsPage
-                key={String(Boolean(user))}
-                user={user}
-                onLogin={() => setModal("login")}
-                albumId={
-                  pathname.startsWith("/albums/")
-                    ? decodeURIComponent(pathname.slice(8))
-                    : null
-                }
-                publicAllowed={visitorCanView(privacy, "albums")}
-              />
+              <Suspense
+                fallback={<div className="skeleton" aria-label="正在打开相册" />}
+              >
+                <AlbumsPage
+                  key={String(Boolean(user))}
+                  user={user}
+                  onLogin={() => setModal("login")}
+                  albumId={
+                    pathname.startsWith("/albums/")
+                      ? decodeURIComponent(pathname.slice(8))
+                      : null
+                  }
+                  publicAllowed={visitorCanView(privacy, "albums")}
+                />
+              </Suspense>
             )}
             {pathname === "/records" && (
               <RecordsPage
@@ -2281,9 +2297,16 @@ export default function App() {
         </Dialog.Portal>
       </Dialog.Root>
       <Dialog.Root
-        open={!!selected}
+        open={!!selected || memoryLoading || Boolean(memoryError)}
         onOpenChange={(o) => {
-          if (!o) setSelected(null);
+          if (!o) {
+            setSelected(null);
+            if (memoryTarget) {
+              const next = new URLSearchParams(params);
+              next.delete("activity");
+              setParams(next, { replace: true, preventScrollReset: true });
+            }
+          }
         }}
       >
         <Dialog.Portal>
@@ -2292,6 +2315,28 @@ export default function App() {
             <Dialog.Close className="close" aria-label="关闭回忆">
               <X />
             </Dialog.Close>
+            {!selected && (
+              <div className="detail-body" aria-busy={memoryLoading}>
+                <Dialog.Title>
+                  {memoryLoading ? "正在打开回忆…" : "暂时打不开回忆"}
+                </Dialog.Title>
+                {memoryLoading ? (
+                  <Dialog.Description className="sr-only">
+                    正在加载这条更新的内容
+                  </Dialog.Description>
+                ) : (
+                  <>
+                    <Dialog.Description>{memoryError}</Dialog.Description>
+                    <button
+                      className="subtle-link"
+                      onClick={() => retryActivityMemory((n) => n + 1)}
+                    >
+                      重试
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
             {selected && (
               <>
                 {selected.image && (

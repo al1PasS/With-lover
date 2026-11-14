@@ -567,6 +567,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/albums/{id}/photos/order": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        get?: never;
+        /** @description 更新一本相册内的照片顺序。提交操作前的照片 ID 顺序与完整的新顺序，支持重复提交已生效的顺序。 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        previousPhotoIds: string[];
+                        photoIds: string[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 已更新顺序的相册和照片元数据 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            album: components["schemas"]["Album"];
+                            photos: components["schemas"]["AlbumPhoto"][];
+                        };
+                    };
+                };
+                /** @description 新顺序有重复、遗漏或含其他相册照片 */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 相册不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                /** @description 相册的照片或顺序刚被修改，请重新载入 */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/albums/{id}/photos/{photo}": {
         parameters: {
             query?: never;
@@ -2164,6 +2235,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/activities/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description 批量标记当前账号已读。自己的动态和已不存在的 ID 会被跳过。 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/me": {
         parameters: {
             query?: never;
@@ -3069,6 +3179,12 @@ export interface components {
             read: boolean;
             /** @description 目标当前是否已删除 */
             deleted: boolean;
+            /** @description 相册照片上传或封面改动涉及的 ID。历史动态可能仅有旧定位链接。 */
+            photoUpdate?: {
+                /** @enum {string} */
+                kind: "added" | "cover";
+                photoIds: string[];
+            } | null;
         };
         ActivityFeed: {
             items: components["schemas"]["Activity"][];

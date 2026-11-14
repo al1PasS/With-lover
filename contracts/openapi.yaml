@@ -173,6 +173,34 @@ paths:
                 properties:
                   photos: { type: array, items: { $ref: "#/components/schemas/AlbumPhoto" } }
                   rejected: { type: array, items: { type: integer } }
+  /albums/{id}/photos/order:
+    parameters: *albumId
+    put:
+      description: 更新一本相册内的照片顺序。提交操作前的照片 ID 顺序与完整的新顺序，支持重复提交已生效的顺序。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [previousPhotoIds, photoIds]
+              properties:
+                previousPhotoIds: { type: array, items: { type: string, minLength: 1, maxLength: 255 } }
+                photoIds: { type: array, uniqueItems: true, items: { type: string, minLength: 1, maxLength: 255 } }
+      responses:
+        "200":
+          description: 已更新顺序的相册和照片元数据
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [album, photos]
+                properties:
+                  album: { $ref: "#/components/schemas/Album" }
+                  photos: { type: array, items: { $ref: "#/components/schemas/AlbumPhoto" } }
+        "400": { description: 新顺序有重复、遗漏或含其他相册照片 }
+        "404": { description: 相册不存在 }
+        "409": { description: 相册的照片或顺序刚被修改，请重新载入 }
   /albums/{id}/photos/{photo}:
     parameters: &photoTarget
       - { name: id, in: path, required: true, schema: { type: string } }
@@ -649,6 +677,19 @@ paths:
                 throughId: { type: integer, format: int64, minimum: 0 }
       responses:
         "204": { description: 标记该游标及之前的动态已读，随后产生的新动态保持未读 }
+  /activities/read:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids: { type: array, minItems: 1, maxItems: 100, items: { type: integer, format: int64, minimum: 1 } }
+      responses:
+        "204": { description: 批量标记当前账号已读。自己的动态和已不存在的 ID 会被跳过。 }
   /auth/me:
     get:
       security: []
@@ -1010,6 +1051,14 @@ components:
         createdAt: { type: string, format: date-time }
         read: { type: boolean }
         deleted: { type: boolean, description: 目标当前是否已删除 }
+        photoUpdate:
+          type: object
+          nullable: true
+          description: 相册照片上传或封面改动涉及的 ID。历史动态可能仅有旧定位链接。
+          required: [kind, photoIds]
+          properties:
+            kind: { type: string, enum: [added, cover] }
+            photoIds: { type: array, items: { type: string } }
     ActivityFeed:
       type: object
       required: [items, unread, latestId, nextCursor]

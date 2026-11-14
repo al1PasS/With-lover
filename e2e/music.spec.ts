@@ -96,10 +96,7 @@ test("native audio events drive the icon and SPA navigation does not recreate or
   await expectMusicStopped(page);
   await expect(musicToggle(page)).not.toHaveClass(/is-playing/);
   await expect(musicToggle(page).locator(".music-note")).toHaveCSS("animation-name", "none");
-  // Native pause leaves the enabled player waiting; first click explicitly turns
-  // it off, then the next click starts it again.
-  await musicToggle(page).click();
-  await expect(musicToggle(page)).toHaveAttribute("data-state", "off");
+  await expect(musicToggle(page)).toHaveAccessibleName("播放背景音乐");
   await musicToggle(page).click();
   await startMusicIfBlocked(page);
   await musicToggle(page).click();

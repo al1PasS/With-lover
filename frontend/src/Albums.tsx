@@ -9,6 +9,8 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import {
   ArrowLeft,
+  ArrowDown,
+  ArrowUp,
   Camera,
   CaretLeft,
   CaretRight,
@@ -21,7 +23,9 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { request } from "./api/client";
+import { ApiError, request } from "./api/client";
+import AlbumPhotoGrid from "./AlbumPhotoGrid";
+import type { paths } from "./api/schema";
 import { PageTitle, VisitorGate } from "./LittleWorld";
 import { demoSettingActivity } from "./Activity";
 import { today } from "./dates";
@@ -54,6 +58,8 @@ type Album = {
 };
 type Detail = { album: Album; photos: Photo[] };
 type Upload = { photos: Photo[]; rejected: number[] };
+type PhotoOrder =
+  paths["/albums/{id}/photos/order"]["put"]["requestBody"]["content"]["application/json"];
 type Stored = Omit<Album, "cover" | "photoCount"> & { photos: Photo[] };
 type OldPhoto = Photo & { category: Album["category"] };
 
@@ -136,6 +142,8 @@ export default function AlbumsPage({
   const [busy, setBusy] = useState("");
   const [reload, setReload] = useState(0);
   const upload = useRef<AbortController | null>(null);
+  const orderRequest = useRef<AbortController | null>(null);
+  const conflictReload = useRef(false);
   const photoOpener = useRef<HTMLButtonElement | null>(null);
   const swipeStart = useRef<{
     pointerId: number;
@@ -146,18 +154,38 @@ export default function AlbumsPage({
   const albumPath = albumId
     ? `/albums/${encodeURIComponent(albumId)}`
     : "/albums";
-  const selectedIndex =
-    detail?.photos.findIndex((p) => p.id === selection) ?? -1;
-  const selected = detail?.photos[selectedIndex];
+  const params = new URLSearchParams(location.search);
+  const photoChange = user && albumId ? params.get("photoChange") : null;
+  const legacyPhoto = user && albumId ? params.get("activity") : null;
+  const requestedPhotos = new Set(
+    photoChange === "added" || photoChange === "cover"
+      ? params.getAll("photo").filter(Boolean).slice(0, 25)
+      : legacyPhoto
+        ? [legacyPhoto]
+        : [],
+  );
+  const inspectingUpdate = requestedPhotos.size > 0;
+  const updateLabel =
+    photoChange === "cover"
+      ? "这次设置的封面"
+      : legacyPhoto
+        ? "这条更新的照片"
+        : "这次添加的照片";
+  const visiblePhotos = !detail
+    ? []
+    : inspectingUpdate
+      ? detail.photos.filter((photo) => requestedPhotos.has(photo.id))
+      : detail.photos;
+  const selectedIndex = visiblePhotos.findIndex((p) => p.id === selection);
+  const selected = visiblePhotos[selectedIndex];
   const refresh = () => setReload((x) => x + 1);
 
   function stepPhoto(direction: -1 | 1) {
     swipeStart.current = null;
     if (!detail || busy) return;
-    const { photos } = detail;
     setSelection((id) => {
-      const index = photos.findIndex((photo) => photo.id === id);
-      return index < 0 ? id : (photos[index + direction]?.id ?? id);
+      const index = visiblePhotos.findIndex((photo) => photo.id === id);
+      return index < 0 ? id : (visiblePhotos[index + direction]?.id ?? id);
     });
   }
 
@@ -184,11 +212,21 @@ export default function AlbumsPage({
   useEffect(() => {
     swipeStart.current = null;
     setSelection(null);
+  }, [albumId, user, location.search]);
+  useEffect(() => {
     setError("");
     setNotice("");
     setBusy("");
-    return () => upload.current?.abort();
+    return () => {
+      upload.current?.abort();
+      orderRequest.current?.abort();
+      orderRequest.current = null;
+      conflictReload.current = false;
+    };
   }, [albumId, user]);
+  useEffect(() => {
+    if (inspectingUpdate) window.scrollTo({ top: 0, behavior: "instant" });
+  }, [inspectingUpdate, location.key]);
   useEffect(() => {
     if (!allowed) {
       setAlbums([]);
@@ -218,7 +256,13 @@ export default function AlbumsPage({
       } catch (e) {
         if (!controller.signal.aborted) setLoadError((e as Error).message);
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          if (conflictReload.current) {
+            conflictReload.current = false;
+            setBusy("");
+          }
+        }
       }
     }
     void read();
@@ -267,7 +311,15 @@ export default function AlbumsPage({
   async function add(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = "";
-    if (!user || !albumId || busy || !files.length) return;
+    if (
+      !user ||
+      !albumId ||
+      busy ||
+      loading ||
+      orderRequest.current ||
+      !files.length
+    )
+      return;
     const controller = new AbortController();
     upload.current = controller;
     let added = 0,
@@ -369,14 +421,16 @@ export default function AlbumsPage({
       if (rejected)
         errors.push(`${rejected} 张照片未能读取。请检查文件是否完整后重试。`);
       if (problem)
-        errors.push(`上传中断：${problem}${added ? "。已添加的照片已保留。" : ""}`);
+        errors.push(
+          `上传中断：${problem}${added ? "。已添加的照片已保留。" : ""}`,
+        );
       setError(errors.join(" "));
       setBusy("");
     }
   }
 
   async function change(action: "cover" | "photo" | "album", photo?: Photo) {
-    if (!user || !albumId || busy) return;
+    if (!user || !albumId || busy || loading || orderRequest.current) return;
     if (action === "photo" && !window.confirm("确定将这张照片移出相册吗？"))
       return;
     if (
@@ -429,6 +483,82 @@ export default function AlbumsPage({
     }
   }
 
+  async function movePhoto(id: string, index: number) {
+    if (
+      !user ||
+      !detail ||
+      detail.album.id !== albumId ||
+      busy ||
+      loading ||
+      orderRequest.current
+    )
+      return;
+    const { album, photos } = detail;
+    const from = photos.findIndex((photo) => photo.id === id);
+    if (from < 0 || index < 0 || index >= photos.length || from === index)
+      return;
+    const next = photos.slice();
+    next.splice(from, 1);
+    next.splice(index, 0, photos[from]);
+    const order: PhotoOrder = {
+      previousPhotoIds: photos.map((photo) => photo.id),
+      photoIds: next.map((photo) => photo.id),
+    };
+    const controller = new AbortController();
+    orderRequest.current = controller;
+    setBusy("正在保存顺序…");
+    setError("");
+    setNotice("");
+    setDetail({
+      album: {
+        ...album,
+        cover: next.find((photo) => photo.id === album.coverId) ?? next[0],
+      },
+      photos: next,
+    });
+    try {
+      if (demo) {
+        persistDemo((old) => {
+          const row = old.find((item) => item.id === albumId);
+          if (!row) throw new ApiError("相册已删除", 404);
+          if (
+            row.photos.length !== photos.length ||
+            row.photos.some(
+              (photo, position) =>
+                photo.id !== order.previousPhotoIds[position],
+            )
+          )
+            throw new ApiError("照片刚有变动，请按最新顺序重试", 409);
+          const moved = { ...row, photos: next };
+          setDetail({ album: summary(moved), photos: next });
+          return old.map((item) => (item.id === albumId ? moved : item));
+        });
+      } else {
+        const saved = await request<Detail>(`${albumPath}/photos/order`, {
+          method: "PUT",
+          body: JSON.stringify(order),
+          signal: controller.signal,
+        });
+        if (controller.signal.aborted) return;
+        setDetail(saved);
+      }
+      setNotice("已保存照片顺序");
+    } catch (e) {
+      if (controller.signal.aborted) return;
+      setDetail(detail);
+      setError((e as Error).message);
+      if (e instanceof ApiError && [404, 409].includes(e.status)) {
+        conflictReload.current = true;
+        refresh();
+      }
+    } finally {
+      if (orderRequest.current === controller) {
+        orderRequest.current = null;
+        if (!conflictReload.current) setBusy("");
+      }
+    }
+  }
+
   const feedback = (
     <>
       {notice && (
@@ -470,10 +600,32 @@ export default function AlbumsPage({
         <div className="album-not-found">
           <FolderOpen />
           <h1>{loading ? "正在打开相册…" : "没有找到这本相册"}</h1>
+          {loading && inspectingUpdate && <p>正在载入{updateLabel}</p>}
           <Link to="/albums">返回照片墙</Link>
         </div>
       );
     const { album, photos } = detail;
+    const sortable = Boolean(
+      user && !inspectingUpdate && photos.length > 1 && !busy && !loading,
+    );
+    const updateHeading = inspectingUpdate && (
+      <div className="album-update-heading">
+        <div>
+          <h2>{updateLabel}</h2>
+          {legacyPhoto && <p>旧动态仅保留了第一张照片的位置。</p>}
+          {requestedPhotos.size > visiblePhotos.length && (
+            <p>
+              {loading
+                ? "正在核对照片…"
+                : `${requestedPhotos.size - visiblePhotos.length} 张照片已移出相册。`}
+            </p>
+          )}
+        </div>
+        <Link className="subtle-link" to={albumPath} replace>
+          查看全部照片
+        </Link>
+      </div>
+    );
     return (
       <>
         <header className="album-hero">
@@ -484,12 +636,16 @@ export default function AlbumsPage({
           <div>
             <span>{album.category === "event" ? "事件相册" : "事物相册"}</span>
             <h1>{album.title}</h1>
-            <p>{album.description || "把属于这一册的照片放在一起。"}</p>
-            <small>
-              {album.photoCount} 张照片 · {album.date.replace(/-/g, ".")}
-            </small>
+            {!inspectingUpdate && (
+              <>
+                <p>{album.description || "把属于这一册的照片放在一起。"}</p>
+                <small>
+                  {album.photoCount} 张照片 · {album.date.replace(/-/g, ".")}
+                </small>
+              </>
+            )}
           </div>
-          {user && (
+          {user && !inspectingUpdate && (
             <label className="primary album-add">
               <Camera />
               {busy || "批量添加照片"}
@@ -499,45 +655,45 @@ export default function AlbumsPage({
                 accept={PHOTO_ACCEPT}
                 multiple
                 onChange={add}
-                disabled={Boolean(busy)}
+                disabled={Boolean(busy) || loading}
               />
             </label>
           )}
         </header>
         {feedback}
-        <section className="album-photo-grid" aria-label="相册照片">
-          {photos.map((photo, index) => (
-            <button
-              className={index % 7 === 0 ? "album-photo-featured" : ""}
-              key={photo.id}
-              id={`activity-${photo.id}`}
-              aria-label={`查看第 ${index + 1} 张照片${album.coverId === photo.id ? "，封面" : ""}`}
-              onClick={(event) => {
-                photoOpener.current = event.currentTarget;
-                setSelection(photo.id);
-                setError("");
-              }}
-            >
-              <img src={photo.thumbnail} alt="" loading="lazy" />
-              {album.coverId === photo.id && (
-                <span className="album-cover-tag">
-                  <ImageSquare aria-hidden="true" /> 封面
-                </span>
-              )}
-            </button>
-          ))}
-          {!photos.length && (
-            <div className="soft-empty">
-              <Images />
-              <p>
-                {user
-                  ? "这本相册还是空的，先添加几张照片吧。"
-                  : "这本相册还没有照片。"}
-              </p>
-            </div>
-          )}
-        </section>
-        {user && (
+        {updateHeading}
+        {user && !inspectingUpdate && photos.length > 1 && (
+          <p className="album-sort-help">
+            长按照片拖动排序，也可在大图里点「前移」或「后移」。
+          </p>
+        )}
+        {visiblePhotos.length ? (
+          <AlbumPhotoGrid
+            key={album.id}
+            photos={visiblePhotos}
+            coverId={album.coverId}
+            sortable={sortable}
+            move={(id, index) => void movePhoto(id, index)}
+            open={(id, button) => {
+              photoOpener.current = button;
+              setSelection(id);
+            }}
+          />
+        ) : (
+          !inspectingUpdate && (
+            <section className="album-photo-grid" aria-label="相册照片">
+              <div className="soft-empty">
+                <Images />
+                <p>
+                  {user
+                    ? "这本相册还是空的，先添加几张照片吧。"
+                    : "这本相册还没有照片。"}
+                </p>
+              </div>
+            </section>
+          )
+        )}
+        {user && !inspectingUpdate && (
           <button
             className="album-delete"
             disabled={Boolean(busy)}
@@ -568,7 +724,10 @@ export default function AlbumsPage({
               }}
               onKeyDown={(event) => {
                 if (
-                  event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+                  event.altKey ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.shiftKey
                 )
                   return;
                 if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
@@ -596,7 +755,7 @@ export default function AlbumsPage({
                       draggable={false}
                       alt={`《${album.title}》中的第 ${selectedIndex + 1} 张照片`}
                     />
-                    {photos.length > 1 && (
+                    {visiblePhotos.length > 1 && (
                       <>
                         <button
                           type="button"
@@ -612,7 +771,8 @@ export default function AlbumsPage({
                           className="album-photo-nav album-photo-next"
                           aria-label="下一张照片"
                           aria-disabled={
-                            Boolean(busy) || selectedIndex === photos.length - 1
+                            Boolean(busy) ||
+                            selectedIndex === visiblePhotos.length - 1
                           }
                           onClick={() => stepPhoto(1)}
                         >
@@ -624,7 +784,7 @@ export default function AlbumsPage({
                   <div>
                     <span>{selected.date}</span>
                     <Dialog.Title aria-live="polite" aria-atomic="true">
-                      照片 {selectedIndex + 1} / {photos.length}
+                      照片 {selectedIndex + 1} / {visiblePhotos.length}
                     </Dialog.Title>
                     <Dialog.Description>
                       {selected.note || `收录在《${album.title}》`}
@@ -657,6 +817,36 @@ export default function AlbumsPage({
                         >
                           <Trash />
                           移出相册
+                        </button>
+                      </div>
+                    )}
+                    {user && !inspectingUpdate && photos.length > 1 && (
+                      <div
+                        className="album-order-actions"
+                        aria-label="调整照片顺序"
+                        role="group"
+                      >
+                        <button
+                          type="button"
+                          className="subtle-link"
+                          disabled={!sortable || selectedIndex === 0}
+                          onClick={() =>
+                            void movePhoto(selected.id, selectedIndex - 1)
+                          }
+                        >
+                          <ArrowUp aria-hidden="true" /> 前移
+                        </button>
+                        <button
+                          type="button"
+                          className="subtle-link"
+                          disabled={
+                            !sortable || selectedIndex === photos.length - 1
+                          }
+                          onClick={() =>
+                            void movePhoto(selected.id, selectedIndex + 1)
+                          }
+                        >
+                          <ArrowDown aria-hidden="true" /> 后移
                         </button>
                       </div>
                     )}
@@ -716,7 +906,12 @@ export default function AlbumsPage({
           >
             <div>
               {album.cover ? (
-                <img src={album.cover.thumbnail} alt="" loading="lazy" />
+                <img
+                  src={album.cover.src}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <span className="album-empty-cover">
                   <FolderOpen />

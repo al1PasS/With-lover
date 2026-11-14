@@ -2,8 +2,10 @@
 const notificationTag = "shiguang-updates";
 async function refreshBadge(count) {
   try {
-    if (count > 0) await self.navigator.setAppBadge?.(count);
-    else await self.navigator.clearAppBadge?.();
+    if (count > 0 && self.navigator.setAppBadge)
+      await self.navigator.setAppBadge(count);
+    else if (!count && self.navigator.clearAppBadge)
+      await self.navigator.clearAppBadge();
   } catch {
     /* Some devices use the system notification itself as the badge. */
   }

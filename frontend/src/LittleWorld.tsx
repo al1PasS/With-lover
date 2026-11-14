@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import {
   ArrowClockwise,
   ChatCircleDots,
@@ -24,6 +24,7 @@ import { useSharedState } from "./sharedState";
 import PostInteractions from "./PostInteractions";
 import { postTime } from "./dates";
 import { demoIdentity, usePostAuthor } from "./members";
+import { SavedVoice, useVoiceRecording } from "./voice";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
 
@@ -217,11 +218,13 @@ export function RecordsPage({
     if (entry) setType(entry.type);
   }, [entries, params]);
   const [type, setType] = useState<Entry["type"]>("message");
-  const [recording, setRecording] = useState(false);
-  const [audioDraft, setAudioDraft] = useState("");
+  const voice = useVoiceRecording();
+  const recording = voice.stage === "recording";
+  const capturingVoice = voice.stage !== "idle";
+  const [checkedVoice, setCheckedVoice] = useState("");
+  const playableVoice = Boolean(voice.audio && checkedVoice === voice.audio);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const recorder = useRef<MediaRecorder | null>(null);
   const author = usePostAuthor();
   const labels = {
     message: "留言板",
@@ -254,16 +257,27 @@ export function RecordsPage({
   }
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!user || busy || !loaded || loadError || recording) return;
+    if (!user || busy || !loaded || loadError || capturingVoice) return;
     const form = e.currentTarget,
       f = new FormData(form);
+    const audio = type === "voice" ? voice.audio : "";
+    const body = String(f.get("body")).trim();
+    if (type === "voice" && !playableVoice) return;
+    if (type !== "voice" && !body) {
+      setError("请先写下内容");
+      return;
+    }
     const next: Entry = {
-      id: crypto.randomUUID(),
+      id:
+        crypto.randomUUID?.() ||
+        Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+          byte.toString(16).padStart(2, "0"),
+        ).join(""),
       type,
       title: String(f.get("title")).trim() || labels[type],
-      body: String(f.get("body")).trim(),
+      body,
       date: new Date().toISOString().slice(0, 10),
-      audio: audioDraft || undefined,
+      audio: audio || undefined,
       ...(demo
         ? {
             authorId: demoIdentity(user),
@@ -271,40 +285,12 @@ export function RecordsPage({
           }
         : {}),
     };
-    if (!next.body) {
-      setError("请先写下内容");
-      return;
-    }
     if (await change([next, ...entries])) {
       form.reset();
-      setAudioDraft("");
-    }
-  }
-  async function toggleRecording() {
-    if (!user) return onLogin();
-    if (recorder.current?.state === "recording") {
-      recorder.current.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const chunks: Blob[] = [];
-      const next = new MediaRecorder(stream);
-      next.ondataavailable = (event) => chunks.push(event.data);
-      next.onstop = () => {
-        const reader = new FileReader();
-        reader.onload = () => setAudioDraft(String(reader.result));
-        reader.readAsDataURL(
-          new Blob(chunks, { type: next.mimeType || "audio/webm" }),
-        );
-        stream.getTracks().forEach((track) => track.stop());
-        setRecording(false);
-      };
-      recorder.current = next;
-      next.start();
-      setRecording(true);
-    } catch {
-      alert("没有获得麦克风权限，请在浏览器设置中允许录音");
+      if (type === "voice") {
+        voice.clear();
+        setCheckedVoice("");
+      }
     }
   }
   return (
@@ -319,6 +305,7 @@ export function RecordsPage({
           <button
             key={key}
             className={type === key ? "active" : ""}
+            disabled={capturingVoice || busy}
             onClick={() => setType(key)}
           >
             {key === "message" ? (
@@ -349,10 +336,10 @@ export function RecordsPage({
             />
           </label>
           <label>
-            {type === "voice" ? "语音备注" : "写下内容"}
+            {type === "voice" ? "语音备注（可选）" : "写下内容"}
             <textarea
               name="body"
-              required
+              required={type !== "voice"}
               rows={5}
               placeholder="把此刻留在这里…"
             />
@@ -362,23 +349,54 @@ export function RecordsPage({
               <button
                 type="button"
                 className={`voice-button ${recording ? "recording" : ""}`}
-                onClick={toggleRecording}
+                disabled={busy || (capturingVoice && !recording)}
+                onClick={() => {
+                  setError("");
+                  void voice.toggle();
+                }}
               >
-                <Microphone weight={recording ? "fill" : "regular"} />
+                <Microphone
+                  aria-hidden="true"
+                  weight={recording ? "fill" : "regular"}
+                />
                 {recording
                   ? "正在录音，点一下完成"
-                  : audioDraft
-                    ? "重新录一段"
-                    : "开始录一段声音"}
+                  : voice.stage === "requesting"
+                    ? "正在请求麦克风权限…"
+                    : voice.stage === "preparing"
+                      ? "正在处理录音…"
+                      : voice.audio
+                        ? "重新录一段"
+                        : "开始录一段声音"}
               </button>
-              {audioDraft && (
-                <audio className="audio-preview" controls src={audioDraft} />
+              {voice.audio && !capturingVoice && (
+                <audio
+                  className="audio-preview"
+                  aria-label="试听录音"
+                  controls
+                  preload="metadata"
+                  src={voice.audio}
+                  onLoadedMetadata={() => setCheckedVoice(voice.audio)}
+                  onError={() => {
+                    setCheckedVoice("");
+                    voice.invalidPreview();
+                  }}
+                />
+              )}
+              {voice.audio && !capturingVoice && !playableVoice && (
+                <p role="status">正在检查录音，可点击试听。</p>
+              )}
+              {voice.error && (
+                <p className="post-feedback" role="alert">{voice.error}</p>
               )}
             </>
           )}
           <button
             className="primary"
-            disabled={busy || !loaded || Boolean(loadError) || recording}
+            disabled={
+              busy || !loaded || Boolean(loadError) || capturingVoice ||
+              (type === "voice" && !playableVoice)
+            }
           >
             {busy ? "保存中…" : "放进记录盒"}
           </button>
@@ -406,7 +424,11 @@ export function RecordsPage({
                 </div>
                 <h2>{item.title}</h2>
                 <p>{item.body}</p>
-                {item.audio && <audio controls src={item.audio} />}
+                {item.audio ? (
+                  <SavedVoice audio={item.audio} />
+                ) : item.type === "voice" ? (
+                  <p className="post-feedback">这条记录没有保存音频。</p>
+                ) : null}
                 <PostInteractions
                   key={`${item.id}:${params.get("activity") || ""}`}
                   module="messages"

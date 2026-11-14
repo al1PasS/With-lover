@@ -212,7 +212,7 @@ export async function mockPlacesApi(
         latestId: 0,
         nextCursor: null,
       });
-    if (/^\/activities\/(?:\d+\/read|read-all)$/.test(path))
+    if (/^\/activities\/(?:\d+\/read|read|read-all)$/.test(path))
       return route.fulfill({ status: 204 });
     if (path === "/public/music")
       return options.publicPlaces

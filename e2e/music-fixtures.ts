@@ -31,7 +31,7 @@ declare global {
 
 // Observe native playback. Only the denial test intercepts one play() rejection;
 // the retry and every successful playing event still come from a real WAV decoder.
-export async function observeMusic(page: Page, denyFirstPlay = false) {
+export async function observeMusic(page: Page, denyFirstPlay: boolean | "pending" = false) {
   await page.addInitScript(({ denyFirstPlay }) => {
     const probe: MusicProbe = { playCalls: 0, denied: 0, events: {} };
     window.__musicProbe = probe;
@@ -39,7 +39,8 @@ export async function observeMusic(page: Page, denyFirstPlay = false) {
     HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
       if (this instanceof HTMLAudioElement) {
         probe.playCalls++;
-        if (denyFirstPlay && probe.denied === 0) {
+        if (denyFirstPlay && probe.playCalls === 1) {
+          if (denyFirstPlay === "pending") return new Promise(() => {});
           probe.denied++;
           return Promise.reject(new DOMException("Synthetic autoplay policy denial", "NotAllowedError"));
         }
