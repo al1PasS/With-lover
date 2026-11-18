@@ -167,7 +167,7 @@ class SharedFeaturesIntegrationTest {
         assertTrue(ImageIO.write(new BufferedImage(300,120,BufferedImage.TYPE_INT_RGB),"png",png));
         var good=new MockMultipartFile("files","乱码原图.png","image/png",png.toByteArray());
         var bad=new MockMultipartFile("files","bad.png","image/png",new byte[]{0,1,2});
-        int limit = 10 * 1024 * 1024;
+        int limit = 50 * 1024 * 1024;
         var boundary = new MockMultipartFile("files", "boundary.png", "image/png", java.util.Arrays.copyOf(png.toByteArray(), limit));
         var oversized = new MockMultipartFile("files", "oversized.png", "image/png", java.util.Arrays.copyOf(png.toByteArray(), limit + 1));
         mvc.perform(multipart(path+"/photos").file(good)).andExpect(status().isUnauthorized());
@@ -190,6 +190,24 @@ class SharedFeaturesIntegrationTest {
             .andExpect(jsonPath("$.items[0].photoUpdate.kind").value("cover"))
             .andExpect(jsonPath("$.items[0].photoUpdate.photoIds[0]").value(cover));
         mvc.perform(get("/api/v1/albums").with(one)).andExpect(status().isOk()).andExpect(jsonPath("$[0].cover.id").value(cover));
+        String edited = json.writeValueAsString(Map.of("title", "  更新名称  ", "description", " 更新说明 "));
+        mvc.perform(patch(path).with(csrf()).contentType("application/json").content(edited)).andExpect(status().isUnauthorized());
+        mvc.perform(patch(path).with(two).contentType("application/json").content(edited)).andExpect(status().isForbidden());
+        mvc.perform(patch(path).with(two).with(csrf()).contentType("application/json")
+            .content(json.writeValueAsString(Map.of("title", "  ", "description", "")))).andExpect(status().isBadRequest());
+        for (int i=0; i<2; i++) {
+            mvc.perform(patch(path).with(two).with(csrf()).contentType("application/json").content(edited))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("更新名称"));
+        }
+        mvc.perform(get(path).with(one)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.album.title").value("更新名称"))
+            .andExpect(jsonPath("$.album.description").value("更新说明"))
+            .andExpect(jsonPath("$.album.date").value("2026-11-13"))
+            .andExpect(jsonPath("$.album.cover.id").value(cover))
+            .andExpect(jsonPath("$.photos.length()").value(2));
+        assertEquals(1, db.queryForObject("""
+            SELECT count(*) FROM activity_events WHERE module='albums' AND target_id=? AND summary='修改了相册信息'
+            """, Integer.class, album.path("id").asText()));
         String publicImage=image.replace("/v1/","/v1/public/");
         var privacy=new PrivacyService.Policy("SELECTED",true,true,false,true,false);
         mvc.perform(put("/api/v1/admin/privacy").with(one).with(csrf()).contentType("application/json").content(json.writeValueAsString(privacy)))

@@ -17,8 +17,8 @@ spring:
     timeout-per-shutdown-phase: 20s
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 22MB
+      max-file-size: 50MB
+      max-request-size: 52MB
 server:
   shutdown: graceful
   forward-headers-strategy: framework

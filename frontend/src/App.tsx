@@ -61,11 +61,11 @@ import {
   ChatCircleDots,
   GameController,
   ListChecks,
-  UploadSimple,
+  HourglassSimple,
 } from "@phosphor-icons/react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { demoMemories, demoAnniversaries } from "./demo";
-import { dayDiff, nextLunarBirthday, today } from "./dates";
+import { nextLunarBirthday, today } from "./dates";
 import type { components } from "./api/schema";
 import { request, resetCsrf } from "./api/client";
 import {
@@ -77,7 +77,12 @@ import {
   type PrivacyPolicy,
 } from "./types";
 import { PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
-import { PHOTO_ACCEPT, photoDataUrl, preparePhoto } from "./imageUpload";
+import {
+  MAX_IMAGE_MB,
+  PHOTO_ACCEPT,
+  photoDataUrl,
+  preparePhoto,
+} from "./imageUpload";
 type RecentMemory = components["schemas"]["RecentMemory"];
 
 const AlbumsPage = lazy(() => import("./Albums"));
@@ -1277,17 +1282,6 @@ export default function App() {
                         <br />
                         只要身边是你，就都值得收藏。
                       </p>
-                      <div className="day-counter">
-                        <span>我们已经一起走过</span>
-                        <div>
-                          <strong>
-                            {dayDiff(couple.togetherSince).toLocaleString()}
-                          </strong>
-                          <span>天</span>
-                          <Heart weight="duotone" size={25} />
-                        </div>
-                        <small>从 2026 年 9 月 12 日，到每一个明天</small>
-                      </div>
                       <div className="hero-buttons">
                         <button className="primary" onClick={() => openEdit()}>
                           <Plus size={18} />
@@ -1315,21 +1309,41 @@ export default function App() {
                             aria-label="封面加载中"
                           />
                         )}
-                        {user && (
-                          <label className="cover-change">
-                            <UploadSimple />
-                            {coverBusy ? "处理中" : "更换封面"}
-                            <input
-                              type="file"
-                              accept={PHOTO_ACCEPT}
-                              onChange={chooseCover}
-                              disabled={coverBusy}
-                            />
-                          </label>
-                        )}
                         <div className="photo-caption">
                           <span>和你一起，哪里都是好天气。</span>
-                          <Heart size={22} />
+                          {user ? (
+                            <label
+                              className="cover-change"
+                              title="更换首页封面"
+                            >
+                              <input
+                                type="file"
+                                aria-label="更换首页封面"
+                                accept={PHOTO_ACCEPT}
+                                onChange={chooseCover}
+                                disabled={coverBusy}
+                              />
+                              <span
+                                className="cover-change-icon"
+                                aria-hidden="true"
+                              >
+                                {coverBusy ? (
+                                  <HourglassSimple size={15} />
+                                ) : (
+                                  <Camera size={15} />
+                                )}
+                              </span>
+                              <span
+                                className="sr-only"
+                                aria-live="polite"
+                                aria-atomic="true"
+                              >
+                                {coverBusy ? "正在更换首页封面" : ""}
+                              </span>
+                            </label>
+                          ) : (
+                            <Heart size={22} aria-hidden="true" />
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2206,7 +2220,7 @@ export default function App() {
                     />
                   </label>
                   <small>
-                    单张最多 10 MB。推荐 7:1，允许 6:1 至 8:1；完整保留内容，手机可左右滑阅。
+                    单张最多 {MAX_IMAGE_MB} MB。推荐 7:1，允许 6:1 至 8:1；完整保留内容，手机可左右滑阅。
                     {editingPlace && "不选择新图会保留原长卷。"}
                   </small>
                 </div>
@@ -2282,7 +2296,7 @@ export default function App() {
                       />
                     </label>
                   )}
-                  <small>支持 HEIC、HEIF、JPG、PNG、WebP，单张最多 10 MB</small>
+                  <small>支持 HEIC、HEIF、JPG、PNG、WebP，单张最多 {MAX_IMAGE_MB} MB</small>
                 </div>
                 <label>
                   归到哪一页

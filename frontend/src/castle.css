@@ -51,6 +51,8 @@ body {
   --hero-muted: #673b58;
   --hero-accent: #99245e;
   --hero-glow: #fff4f9;
+  --petal-highlight: #ffd0e1;
+  --petal-rose: #d95c91;
   --hero-shade: linear-gradient(
     90deg,
     #fff1f8 1%,
@@ -86,6 +88,8 @@ body {
   --hero-text: #fff2f9;
   --hero-muted: #f2d5e8;
   --hero-accent: #ffacd4;
+  --petal-highlight: #ffe1ed;
+  --petal-rose: #ec84b3;
   --hero-shade: linear-gradient(
     90deg,
     #372039 6%,
@@ -155,8 +159,7 @@ body {
   color: #472b54;
 }
 .castle-hero .couple-label svg,
-.castle-hero .pink-word,
-.castle-hero .day-counter svg {
+.castle-hero .pink-word {
   color: var(--hero-accent);
 }
 .castle-hero h1 {
@@ -169,24 +172,10 @@ body {
 .castle-hero .pink-word::after {
   background: var(--hero-accent);
 }
-.castle-hero .hero-description,
-.castle-hero .day-counter > span,
-.castle-hero .day-counter small {
-  color: var(--hero-muted);
-}
 .castle-hero .hero-description {
+  color: var(--hero-muted);
   font-size: 14px;
   margin-top: 22px;
-}
-.castle-hero .day-counter {
-  border-left: 1px solid var(--hero-accent);
-  padding-left: 14px;
-}
-.castle-hero .day-counter strong {
-  font-family: "Baskerville", Georgia, serif;
-  color: var(--hero-accent);
-  font-size: 52px;
-  line-height: 1.08;
 }
 .castle-hero .hero-buttons {
   gap: 18px;
@@ -242,17 +231,49 @@ body {
   font-size: 10px;
   letter-spacing: 0.02em;
 }
-.castle-hero .photo-caption svg {
+.castle-hero .photo-caption > svg {
   flex-shrink: 0;
   color: #a55066;
 }
-.castle-hero .cover-change {
-  top: auto;
-  bottom: 51px;
-  right: 12px;
-  min-height: 44px;
-  color: #4b2c3e;
-  background: #fff1f7;
+.cover-change {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  margin-inline-end: -7px;
+}
+.cover-change input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.cover-change-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #e5a7c1;
+  color: #872e54;
+  background: #f8dce9;
+  pointer-events: none;
+}
+.cover-change:hover .cover-change-icon,
+.cover-change:active .cover-change-icon {
+  background: #efbfd4;
+}
+.cover-change:focus-within .cover-change-icon {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.cover-change input:disabled {
+  cursor: wait;
 }
 
 .castle-magic {
@@ -353,6 +374,21 @@ body {
     276px 98px #fff8f1;
   filter: drop-shadow(0 0 5px #f657a3);
 }
+.castle-petal {
+  display: none;
+  top: -16px;
+  width: var(--petal-size);
+  height: calc(100% + 32px);
+  transform-origin: center 6px;
+}
+.castle-petal::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: calc(var(--petal-size) * 0.75);
+  border-radius: 18% 66% 48% 70%;
+  background: linear-gradient(145deg, var(--petal-highlight), var(--petal-rose));
+}
 .castle-motion {
   position: absolute;
   z-index: 2;
@@ -432,13 +468,6 @@ body {
   border-radius: 28px 28px 12px 12px;
   background: linear-gradient(115deg, var(--surface), var(--castle-violet));
 }
-.album-hero .album-add {
-  right: clamp(18px, 4vw, 48px);
-}
-.album-hero > div {
-  max-width: calc(100% - 174px);
-  overflow-wrap: anywhere;
-}
 .album-collection-wall > a {
   border-color: var(--castle-halo);
 }
@@ -451,21 +480,12 @@ body {
   font-size: 0.875rem;
   margin: 0 0 16px;
 }
-.album-photo-grid {
-  grid-auto-flow: row;
-}
 .album-photo-grid > button.album-photo-tile {
-  aspect-ratio: 4 / 3;
-  min-height: 165px;
   border-radius: 14px;
   border: 1px solid var(--castle-halo);
+  transform-origin: top left;
   user-select: none;
   -webkit-touch-callout: none;
-}
-@supports (aspect-ratio: 4 / 3) {
-  .album-photo-grid > button.album-photo-tile {
-    min-height: 0;
-  }
 }
 .album-photo-tile:focus-visible {
   outline: 2px solid var(--accent);
@@ -566,9 +586,6 @@ body {
   .castle-art::after {
     background: var(--hero-shade-mobile);
   }
-  .castle-hero .hero-copy {
-    column-gap: 10px;
-  }
   .castle-hero h1 {
     font-size: clamp(31px, 9.4vw, 45px);
   }
@@ -578,13 +595,6 @@ body {
   .castle-hero .hero-description {
     font-size: 12px;
     margin-top: 14px;
-  }
-  .castle-hero .day-counter {
-    min-width: 0;
-    padding-left: 7px;
-  }
-  .castle-hero .day-counter strong {
-    font-size: 34px;
   }
   .castle-hero .hero-buttons {
     gap: 4px 14px;
@@ -604,11 +614,8 @@ body {
     height: 37px;
     font-size: 9px;
   }
-  .castle-hero .photo-caption svg {
+  .castle-hero .photo-caption > svg {
     width: 15px;
-  }
-  .castle-hero .cover-change {
-    bottom: 41px;
   }
   .castle-orbit {
     left: 11%;
@@ -676,12 +683,6 @@ body {
   .world-menu.castle-rooms > a > svg:last-child:not(:first-child) {
     display: none;
   }
-  .album-hero > div {
-    max-width: 100%;
-  }
-  .album-hero .album-add {
-    right: auto;
-  }
 }
 
 @keyframes castle-float {
@@ -702,7 +703,29 @@ body {
     transform: scale(1.1);
   }
 }
+@keyframes castle-petal-fall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(-20deg);
+    opacity: 0;
+  }
+  12%, 84% {
+    opacity: 0.78;
+  }
+  48% {
+    transform: translate3d(var(--petal-drift), 48%, 0) rotate(65deg);
+  }
+  100% {
+    transform: translate3d(0, 100%, 0) rotate(145deg);
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: no-preference) {
+  .castle-petal {
+    display: block;
+    animation-name: castle-petal-fall;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+  }
   .castle-lantern,
   .castle-key {
     animation: castle-float 5.8s ease-in-out infinite alternate;
@@ -733,6 +756,11 @@ body {
   }
   .world-menu.castle-rooms > a:hover {
     box-shadow: 0 9px 19px #57374c24;
+  }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: no-preference) {
+  .castle-petal:nth-of-type(n + 7) {
+    display: none;
   }
 }
 .castle-magic.is-paused > * {

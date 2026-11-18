@@ -1,10 +1,67 @@
 import {test,expect} from '../frontend/node_modules/@playwright/test/index';
+
+test("the compact cover picker is keyboard and pointer accessible for members", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce", colorScheme: "dark" });
+  await page.goto("/");
+  const picker = page.getByLabel("更换首页封面", { exact: true });
+  await expect(picker).toHaveCount(0);
+  await page.getByRole("button", { name: "进入我们的小世界" }).click();
+  await page.getByRole("button", { name: "进入示例空间", exact: true }).click();
+
+  const icon = page.locator(".photo-caption .cover-change-icon");
+  await expect(icon).toHaveCSS("width", "28px");
+  await expect(picker).toHaveCSS("width", "44px");
+  await expect(picker).toHaveCSS("height", "44px");
+  await picker.focus();
+  await expect(icon).toHaveCSS("outline-style", "solid");
+  const [keyboardPicker] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    page.keyboard.press("Enter"),
+  ]);
+  await keyboardPicker.setFiles([]);
+
+  await page.setViewportSize({ width: 375, height: 812 });
+  const [pointerPicker] = await Promise.all([
+    page.waitForEvent("filechooser"),
+    picker.click(),
+  ]);
+  const png = await page.evaluate(() => document.createElement("canvas").toDataURL("image/png"));
+  await pointerPicker.setFiles({
+    name: "synthetic-cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from(png.split(",")[1], "base64"),
+  });
+  await expect(page.getByRole("status").filter({ hasText: "新的封面已经换好啦" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "我们的封面照片" })).toHaveAttribute("src", /^data:image\//);
+});
+
+test("home petals follow the scene pause control and reduced motion", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.emulateMedia({ reducedMotion: "no-preference", colorScheme: "dark" });
+  await page.goto("/");
+  const petals = page.locator(".castle-petal:visible");
+  await expect(petals).toHaveCount(6);
+  const petal = petals.first();
+  await expect(petal).toHaveCSS("animation-name", "castle-petal-fall");
+  await expect(petal).toHaveCSS("pointer-events", "none");
+  await page.getByRole("button", { name: "暂停首页动效" }).click();
+  await expect(petal).toHaveCSS("animation-play-state", "paused");
+  await page.getByRole("button", { name: "播放首页动效" }).click();
+  await expect(petal).toHaveCSS("animation-play-state", "running");
+
+  await page.setViewportSize({ width: 1280, height: 850 });
+  await expect(petals).toHaveCount(9);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await expect(petals).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "暂停首页动效" })).toBeHidden();
+});
+
 test('personal dates and visible mobile add buttons',async({page})=>{
  await page.setViewportSize({width:375,height:812});
  await page.goto('/');
  await expect(page.locator('.couple-label')).toContainText('雯晴');
  await expect(page.locator('.couple-label')).toContainText('杰杰');
- await expect(page.locator('.day-counter')).toContainText('2026 年 9 月 12 日');
+ await expect(page.locator('.day-counter')).toHaveCount(0);
  await page.getByRole('button',{name:'进入我们的小世界'}).click();
  await expect(page.getByLabel('账户',{exact:true})).toHaveValue('杰杰');
  await page.getByRole('button',{name:'进入示例空间',exact:true}).click();

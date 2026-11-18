@@ -21,6 +21,7 @@ class AlbumService {
 
     record Input(@NotBlank @Size(max=80) String title, @NotNull @Size(max=300) String description,
                  @NotNull @Pattern(regexp="event|thing") String category, @NotNull LocalDate date) {}
+    record AlbumText(@NotBlank @Size(max=80) String title, @NotNull @Size(max=300) String description) {}
     record Photo(String id,String src,String thumbnail,String note,String date) {}
     record Album(String id,String title,String description,String category,String date,String coverId,Photo cover,int photoCount) {}
     record Detail(Album album,List<Photo> photos) {}
@@ -33,13 +34,17 @@ class AlbumService {
 
     List<Album> list(boolean publicRead) {
         return db.query("""
-            SELECT c.*,cover.id AS photo_id,cover.photo_date,cover.note,cover.static_src, totals.photo_count
+            SELECT c.*,COALESCE(chosen.id, first_photo.id) AS photo_id,
+                COALESCE(chosen.photo_date, first_photo.photo_date) AS photo_date,
+                COALESCE(chosen.note, first_photo.note) AS note, totals.photo_count
             FROM album_collections c
             CROSS JOIN LATERAL (SELECT count(*) AS photo_count FROM album_photos p WHERE p.album_id=c.id) totals
+            LEFT JOIN album_photos chosen ON chosen.album_id=c.id AND chosen.id=c.cover_id
             LEFT JOIN LATERAL (
-                SELECT p.id,p.photo_date,p.note,p.static_src FROM album_photos p WHERE p.album_id=c.id
-                ORDER BY (p.id=c.cover_id) DESC NULLS LAST,p.sort_order,p.id LIMIT 1
-            ) cover ON true
+                SELECT p.id,p.photo_date,p.note FROM album_photos p
+                WHERE p.album_id=c.id AND chosen.id IS NULL
+                ORDER BY p.sort_order,p.id LIMIT 1
+            ) first_photo ON true
             ORDER BY c.created_at DESC,c.sort_order,c.id
             """, (rs,n) -> {
             String id = rs.getString("id"), cover = rs.getString("photo_id");
@@ -69,6 +74,18 @@ class AlbumService {
             id,title,in.description().strip(),in.category(),in.date().toString());
         activity.record("albums",id,"created",title,"新增了相册",ActivityService.route("albums",id));
         return new Album(id,title,in.description().strip(),in.category(),in.date().toString(),null,null,0);
+    }
+
+    @Transactional public AlbumText updateText(String id, AlbumText input) {
+        lock(id);
+        var text = new AlbumText(input.title().strip(), input.description().strip());
+        if (db.update("""
+            UPDATE album_collections SET title=?, description=? WHERE id=?
+            AND (title IS DISTINCT FROM ? OR description IS DISTINCT FROM ?)
+            """, text.title(), text.description(), id, text.title(), text.description()) > 0) {
+            activity.record("albums", id, "updated", text.title(), "修改了相册信息", ActivityService.route("albums", id));
+        }
+        return text;
     }
 
     @Transactional public Upload add(String id,List<AlbumImages.Image> images,List<Integer> rejected) {

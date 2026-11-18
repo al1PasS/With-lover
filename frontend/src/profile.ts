@@ -5,7 +5,6 @@ import { dayDiff, nextAnniversary, nextLunarBirthday, today } from "./dates";
 export const couple = {
   male: "杰杰",
   female: "雯晴",
-  togetherSince: "2026-09-12",
 };
 export const personalAnniversaries: Anniversary[] = [
   {

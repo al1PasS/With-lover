@@ -10,6 +10,100 @@ test.use({
   viewport: { width: 375, height: 812 },
 });
 
+test("edits album text and reveals photos a batch at a time on mobile", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark", reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    sessionStorage.setItem("shiguang:demo-user", "测试成员");
+    if (localStorage.getItem("shiguang:albums")) return;
+    const photos = Array.from({ length: 100 }, (_, index) => ({
+      id: `large-${index}`,
+      src: `/images/cover.webp?full=${index}`,
+      thumbnail: `/images/cover.webp?thumb=${index}`,
+      note: "",
+      date: "2026-01-01",
+    }));
+    const album = {
+      id: "large-album",
+      title: "旧相册名称",
+      description: "旧相册说明",
+      category: "event",
+      date: "2026-01-01",
+      coverId: null,
+      photos,
+    };
+    const covers = Array.from({ length: 4 }, (_, index) => ({
+      ...album,
+      id: `cover-album-${index}`,
+      title: `照片墙相册 ${index + 1}`,
+      photos: photos.slice(index, index + 1),
+    }));
+    localStorage.setItem("shiguang:albums", JSON.stringify([album, ...covers]));
+  });
+  const requested = new Set<string>();
+  page.on("request", (request) => {
+    const { search } = new URL(request.url());
+    if (/^\?(thumb|full)=/.test(search)) requested.add(search);
+  });
+
+  await page.goto("/albums/large-album");
+  const grid = page.getByRole("region", { name: "相册照片" });
+  await expect(grid.getByRole("button")).toHaveCount(36);
+  expectPairedThenWide(await grid.getByRole("button").evaluateAll(cardRects));
+  await expect.poll(() => requested.size).toBeGreaterThan(0);
+  expect(requested.size).toBeLessThan(36);
+  expect([...requested].every((url) => url.startsWith("?thumb="))).toBeTruthy();
+  const edit = page.getByRole("button", { name: "编辑相册" });
+  await edit.tap();
+  const dialog = page.getByRole("dialog", { name: "编辑相册" });
+  await expect(dialog.getByLabel("相册名称")).toHaveValue("旧相册名称");
+  await expect(dialog.getByLabel("相册说明")).toHaveValue("旧相册说明");
+  await dialog.getByLabel("相册名称").fill("更新后的相册");
+  await dialog.getByLabel("相册说明").fill("更新后的相册说明");
+  await dialog.getByRole("button", { name: "保存修改" }).tap();
+  await expect(dialog).toBeHidden();
+  await expect(edit).toBeFocused();
+  await expect(page.getByRole("heading", { name: "更新后的相册" })).toBeVisible();
+  await expect(page.getByText("更新后的相册说明")).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+
+  await page.getByRole("button", { name: "显示更多照片" }).scrollIntoViewIfNeeded();
+  await expect(grid.getByRole("button")).toHaveCount(72);
+  await grid.getByRole("button", { name: "查看第 37 张照片", exact: true }).tap();
+  await expect(page.getByRole("dialog").getByRole("heading")).toHaveText("照片 37 / 100");
+  await expect.poll(() => requested.has("?full=36")).toBeTruthy();
+
+  await page.goto("/albums");
+  await expect(page.getByRole("link", { name: /更新后的相册/ })).toContainText("更新后的相册说明");
+  const cards = page.locator(".album-collection-wall > a");
+  expectPairedThenWide(await cards.evaluateAll(cardRects));
+  await page.setViewportSize({ width: 1280, height: 850 });
+  expectPairedThenWide(await cards.evaluateAll(cardRects));
+  await page.goto("/albums/large-album");
+  await expect(grid.getByRole("button")).toHaveCount(36);
+  expectPairedThenWide(await grid.getByRole("button").evaluateAll(cardRects));
+  await page.goto("/");
+  await expect(page.getByText("我们已经一起走过")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "记录此刻" })).toBeVisible();
+});
+
+function cardRects(cards: Element[]) {
+  return cards.slice(0, 4).map((card) => {
+    const { x, y, width, right, bottom } = card.getBoundingClientRect();
+    return { x, y, width, right, bottom };
+  });
+}
+
+function expectPairedThenWide(rects: ReturnType<typeof cardRects>) {
+  const [left, right, wide, next] = rects;
+  expect(left.y).toBeCloseTo(right.y);
+  expect(right.x).toBeGreaterThan(left.right);
+  expect(wide.x).toBeCloseTo(left.x);
+  expect(wide.right).toBeCloseTo(right.right);
+  expect(wide.width).toBeGreaterThan(left.width);
+  expect(wide.y).toBeGreaterThanOrEqual(Math.max(left.bottom, right.bottom));
+  expect(next.y).toBeGreaterThanOrEqual(wide.bottom);
+}
+
 test("a touch hold reorders the album while a quick swipe scrolls and a tap opens the photo", async ({ page }) => {
   await page.addInitScript(() => {
     if (localStorage.getItem("shiguang:albums")) return;
@@ -71,11 +165,28 @@ test("a touch hold reorders the album while a quick swipe scrolls and a tap open
   await expect(first).toBeFocused();
   await page.keyboard.press("Space");
   await expect(grid).toHaveClass(/is-sorting/);
+  await expect(page.locator(".album-drag-preview")).toContainText("第 1 位");
+  await waitForKeyboardDrag(page);
   await page.keyboard.press("ArrowRight");
   await expect(page.locator(".album-drag-preview")).toContainText("第 2 位");
   await page.keyboard.press("Space");
   await expect(first).toHaveAccessibleName("查看第 2 张照片");
+  await expect(first).toBeFocused();
+  await page.keyboard.press("Space");
+  await expect(page.locator(".album-drag-preview")).toContainText("第 2 位");
+  await waitForKeyboardDrag(page);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator(".album-drag-preview")).toContainText("第 3 位");
+  await page.keyboard.press("Space");
+  await expect(first).toHaveAccessibleName("查看第 3 张照片");
 });
+
+function waitForKeyboardDrag(page: import("../frontend/node_modules/@playwright/test/index").Page) {
+  // The keyboard sensor attaches its movement listener after the initial key event.
+  return page.evaluate(() => new Promise<void>((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+  }));
+}
 
 async function swipe(
   cdp: CDPSession,

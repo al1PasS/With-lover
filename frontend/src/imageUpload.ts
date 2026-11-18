@@ -1,6 +1,7 @@
-export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+export const MAX_IMAGE_MB = 50;
+export const MAX_IMAGE_BYTES = MAX_IMAGE_MB * 1024 * 1024;
 export const PHOTO_ACCEPT = "image/*,.heic,.heif";
-export const PHOTO_SIZE_ERROR = "单张照片不能超过 10 MB";
+export const PHOTO_SIZE_ERROR = `单张照片不能超过 ${MAX_IMAGE_MB} MB`;
 
 const HEIF_BRANDS = /^(mif1|msf1|hei[cxms]|hev[cxms])$/;
 const MAX_PIXELS = 50_000_000;

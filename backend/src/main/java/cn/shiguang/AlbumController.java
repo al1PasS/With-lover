@@ -29,6 +29,11 @@ class AlbumController {
     @PostMapping("/albums") @ResponseStatus(HttpStatus.CREATED)
     AlbumService.Album create(@Valid @RequestBody AlbumService.Input input) { return albums.create(input); }
 
+    @PatchMapping("/albums/{id}")
+    AlbumService.AlbumText updateText(@PathVariable String id, @Valid @RequestBody AlbumService.AlbumText input) {
+        return albums.updateText(id, input);
+    }
+
     @PostMapping(value="/albums/{id}/photos",consumes=MediaType.MULTIPART_FORM_DATA_VALUE)
     AlbumService.Upload upload(@PathVariable String id,@RequestParam("files") List<MultipartFile> files) {
         if (files.isEmpty() || files.size()>5) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"请每批选择 1 至 5 张照片");

@@ -149,6 +149,7 @@ export function demoSettingActivity(
   type Row = {
     id: string;
     title?: string;
+    description?: string;
     text?: string;
     done?: boolean;
     coverId?: string | null;
@@ -193,6 +194,8 @@ export function demoSettingActivity(
         x.photos?.some((photo, index) => photo.id !== old.photos?.[index]?.id)
       )
         summary = "调整了照片顺序";
+      else if (old.title !== x.title || old.description !== x.description)
+        summary = "修改了相册信息";
     }
     demoActivity(
       key,

@@ -25,7 +25,7 @@ class ApiErrors {
  @ExceptionHandler(MaxUploadSizeExceededException.class)
  ResponseEntity<Error> uploadLimit(MaxUploadSizeExceededException e,HttpServletRequest request){
   String message=AlbumUploadFilter.isPhotoUpload(request)
-   ? "单张照片不能超过 10 MB，每批请控制在 22 MiB 以内"
+   ? "单张照片不能超过 50 MB，每批请控制在 52 MiB 以内"
    : "单个文件不能超过 20 MiB，请缩小文件后重试";
   return ResponseEntity.status(413).body(error("UPLOAD_TOO_LARGE",message));
  }

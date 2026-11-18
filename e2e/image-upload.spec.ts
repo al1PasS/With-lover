@@ -1,4 +1,6 @@
 import { expect, test } from "../frontend/node_modules/@playwright/test/index";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 
 test.use({
   baseURL: "http://127.0.0.1:5174",
@@ -23,9 +25,9 @@ function padHeif(size: number) {
   return data;
 }
 
-test("HEIF is compressed before upload in every photo picker and the 10 MiB boundary is inclusive", async ({
+test("HEIF is compressed before upload in every photo picker and the 50 MiB boundary is inclusive", async ({
   page,
-}) => {
+}, testInfo) => {
   const violations: string[] = [];
   const codecRequests: string[] = [];
   page.on("console", (message) => {
@@ -70,20 +72,15 @@ test("HEIF is compressed before upload in every photo picker and the 10 MiB boun
       response.request().method() === "POST" &&
       /\/albums\/[^/]+\/photos$/.test(response.url()),
   );
-  const limit = 10 * 1024 * 1024;
-  await albumInput.setInputFiles([
-    {
-      name: "boundary.heif",
-      mimeType: "application/octet-stream",
-      buffer: padHeif(limit),
-    },
-    { name: "over.heic", mimeType: "image/heic", buffer: padHeif(limit + 1) },
-    {
-      name: "broken.heic",
-      mimeType: "image/heic",
-      buffer: Buffer.from("invalid HEIC"),
-    },
-  ]);
+  const limit = 50 * 1024 * 1024;
+  const boundary = testInfo.outputPath("boundary.heif");
+  const oversized = testInfo.outputPath("oversized.heic");
+  const broken = testInfo.outputPath("broken.heic");
+  await mkdir(dirname(boundary), { recursive: true });
+  await writeFile(boundary, padHeif(limit));
+  await writeFile(oversized, padHeif(limit + 1));
+  await writeFile(broken, "invalid HEIC");
+  await albumInput.setInputFiles([boundary, oversized, broken]);
   const uploaded = await upload;
   expect(uploaded.ok()).toBeTruthy();
   const submitted = await page
@@ -98,11 +95,25 @@ test("HEIF is compressed before upload in every photo picker and the 10 MiB boun
   await expect(
     page.getByText("已添加 1 张照片", { exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText("单张照片不能超过 10 MB");
+  await expect(page.getByRole("alert")).toContainText("单张照片不能超过 50 MB");
   await expect(page.getByRole("alert")).toContainText("1 张照片未能读取");
   const { photos } = await uploaded.json();
   const thumbnail = await page.request.get(photos[0].thumbnail);
   expect(thumbnail.headers()["content-type"]).toBe("image/jpeg");
+
+  const png = await page.evaluate(() => document.createElement("canvas").toDataURL("image/png"));
+  const raw = Buffer.alloc(limit + 1);
+  Buffer.from(png.split(",")[1], "base64").copy(raw);
+  const csrf = await (await page.request.get("/api/v1/auth/csrf")).json();
+  const rawUpload = (buffer: Buffer) =>
+    page.request.post(uploaded.url(), {
+      headers: { [csrf.headerName]: csrf.token },
+      multipart: { files: { name: "raw.png", mimeType: "image/png", buffer } },
+    });
+  const rawAccepted = await rawUpload(raw.subarray(0, limit));
+  expect(rawAccepted.status()).toBe(200);
+  expect((await rawAccepted.json()).photos).toHaveLength(1);
+  expect((await rawUpload(raw)).status()).toBe(413);
 
   const file = { name: "camera.heic", mimeType: "image/heic", buffer: heic };
   await page.goto("/timeline");

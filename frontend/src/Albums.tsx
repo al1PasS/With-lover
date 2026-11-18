@@ -19,19 +19,21 @@ import {
   FolderPlus,
   ImageSquare,
   Images,
+  PencilSimple,
   Trash,
   X,
 } from "@phosphor-icons/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { ApiError, request } from "./api/client";
 import AlbumPhotoGrid from "./AlbumPhotoGrid";
-import type { paths } from "./api/schema";
+import type { components, paths } from "./api/schema";
 import { PageTitle, VisitorGate } from "./LittleWorld";
 import { demoSettingActivity } from "./Activity";
 import { today } from "./dates";
 import {
   ImageReadError,
   MAX_IMAGE_BYTES,
+  MAX_IMAGE_MB,
   PHOTO_ACCEPT,
   PHOTO_SIZE_ERROR,
   photoDataUrl,
@@ -39,6 +41,8 @@ import {
 } from "./imageUpload";
 
 const demo = import.meta.env.VITE_DEMO !== "false";
+const MAX_PHOTO_BATCH_BYTES = 51 * 1024 * 1024;
+type AlbumText = components["schemas"]["AlbumText"];
 type Photo = {
   id: string;
   src: string;
@@ -132,6 +136,8 @@ export default function AlbumsPage({
   const location = useLocation();
   const [category, setCategory] = useState<Album["category"]>("event");
   const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState("");
   const [selection, setSelection] = useState<string | null>(null);
   const [albums, setAlbums] = useState<Album[]>([]);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -142,6 +148,7 @@ export default function AlbumsPage({
   const [busy, setBusy] = useState("");
   const [reload, setReload] = useState(0);
   const upload = useRef<AbortController | null>(null);
+  const editRequest = useRef<AbortController | null>(null);
   const orderRequest = useRef<AbortController | null>(null);
   const conflictReload = useRef(false);
   const photoOpener = useRef<HTMLButtonElement | null>(null);
@@ -217,8 +224,11 @@ export default function AlbumsPage({
     setError("");
     setNotice("");
     setBusy("");
+    setEditing(false);
+    setEditError("");
     return () => {
       upload.current?.abort();
+      editRequest.current?.abort();
       orderRequest.current?.abort();
       orderRequest.current = null;
       conflictReload.current = false;
@@ -308,6 +318,57 @@ export default function AlbumsPage({
     }
   }
 
+  async function saveAlbumText(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user || !albumId || busy || loading || editRequest.current) return;
+    const data = new FormData(event.currentTarget);
+    const input: AlbumText = {
+      title: String(data.get("title")).trim(),
+      description: String(data.get("description")).trim(),
+    };
+    if (!input.title) {
+      setEditError("请填写相册名称");
+      return;
+    }
+    const controller = new AbortController();
+    editRequest.current = controller;
+    setBusy("正在保存…");
+    setEditError("");
+    setError("");
+    setNotice("");
+    try {
+      let saved = input;
+      if (demo) {
+        persistDemo((old) => {
+          if (!old.some((row) => row.id === albumId))
+            throw new ApiError("相册已删除", 404);
+          return old.map((row) =>
+            row.id === albumId ? { ...row, ...input } : row,
+          );
+        });
+      } else {
+        saved = await request<AlbumText>(albumPath, {
+          method: "PATCH",
+          body: JSON.stringify(input),
+          signal: controller.signal,
+        });
+      }
+      if (controller.signal.aborted) return;
+      setDetail((current) =>
+        current?.album.id === albumId
+          ? { ...current, album: { ...current.album, ...saved } }
+          : current,
+      );
+      setNotice("已保存相册信息");
+      setEditing(false);
+    } catch (e) {
+      if (!controller.signal.aborted) setEditError((e as Error).message);
+    } finally {
+      if (editRequest.current === controller) editRequest.current = null;
+      if (!controller.signal.aborted) setBusy("");
+    }
+  }
+
   async function add(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.currentTarget.files || []);
     event.currentTarget.value = "";
@@ -388,7 +449,7 @@ export default function AlbumsPage({
               date: today(),
             });
           } else {
-            if (bytes + blob.size > 21 * 1024 * 1024) await flush();
+            if (bytes + blob.size > MAX_PHOTO_BATCH_BYTES) await flush();
             if (controller.signal.aborted) return;
             form.append("files", blob, "photo");
             bytes += blob.size;
@@ -633,7 +694,7 @@ export default function AlbumsPage({
             <ArrowLeft />
             返回照片墙
           </Link>
-          <div>
+          <div className="album-hero-info">
             <span>{album.category === "event" ? "事件相册" : "事物相册"}</span>
             <h1>{album.title}</h1>
             {!inspectingUpdate && (
@@ -646,18 +707,85 @@ export default function AlbumsPage({
             )}
           </div>
           {user && !inspectingUpdate && (
-            <label className="primary album-add">
-              <Camera />
-              {busy || "批量添加照片"}
-              <input
-                type="file"
-                aria-label="批量添加照片"
-                accept={PHOTO_ACCEPT}
-                multiple
-                onChange={add}
-                disabled={Boolean(busy) || loading}
-              />
-            </label>
+            <div className="album-hero-actions">
+              <Dialog.Root
+                open={editing}
+                onOpenChange={(open) => {
+                  if (busy) return;
+                  if (open) setEditError("");
+                  setEditing(open);
+                }}
+              >
+                <Dialog.Trigger
+                  className="subtle-link"
+                  disabled={Boolean(busy) || loading}
+                >
+                  <PencilSimple aria-hidden="true" /> 编辑相册
+                </Dialog.Trigger>
+                <Dialog.Portal>
+                  <Dialog.Overlay className="overlay" />
+                  <Dialog.Content className="modal">
+                    <Dialog.Close
+                      className="close"
+                      aria-label="关闭"
+                      disabled={Boolean(busy)}
+                    >
+                      <X aria-hidden="true" />
+                    </Dialog.Close>
+                    <Dialog.Title>编辑相册</Dialog.Title>
+                    <Dialog.Description>
+                      修改这本相册的名称和说明。
+                    </Dialog.Description>
+                    <form onSubmit={saveAlbumText}>
+                      <label>
+                        相册名称
+                        <input
+                          name="title"
+                          required
+                          maxLength={80}
+                          defaultValue={album.title}
+                          disabled={Boolean(busy)}
+                        />
+                      </label>
+                      <label>
+                        相册说明
+                        <textarea
+                          name="description"
+                          rows={3}
+                          maxLength={300}
+                          defaultValue={album.description}
+                          disabled={Boolean(busy)}
+                        />
+                      </label>
+                      {editError && (
+                        <p className="post-feedback" role="alert">
+                          {editError}
+                        </p>
+                      )}
+                      <button className="primary" disabled={Boolean(busy)}>
+                        {busy || "保存修改"}
+                      </button>
+                    </form>
+                  </Dialog.Content>
+                </Dialog.Portal>
+              </Dialog.Root>
+              <div className="album-upload">
+                <label className="primary album-add">
+                  <Camera aria-hidden="true" />
+                  {busy || "批量添加照片"}
+                  <input
+                    type="file"
+                    aria-label="批量添加照片"
+                    aria-describedby="album-upload-limit"
+                    accept={PHOTO_ACCEPT}
+                    multiple
+                    onChange={add}
+                    disabled={Boolean(busy) || loading}
+                  />
+                </label>
+                <small id="album-upload-limit">单张最多 {MAX_IMAGE_MB} MB</small>
+              </div>
+            </div>
           )}
         </header>
         {feedback}
@@ -669,7 +797,7 @@ export default function AlbumsPage({
         )}
         {visiblePhotos.length ? (
           <AlbumPhotoGrid
-            key={album.id}
+            key={inspectingUpdate ? location.search : album.id}
             photos={visiblePhotos}
             coverId={album.coverId}
             sortable={sortable}
@@ -752,6 +880,7 @@ export default function AlbumsPage({
                     <img
                       key={selected.id}
                       src={selected.src}
+                      decoding="async"
                       draggable={false}
                       alt={`《${album.title}》中的第 ${selectedIndex + 1} 张照片`}
                     />
@@ -861,6 +990,7 @@ export default function AlbumsPage({
     );
   }
   const filtered = albums.filter((album) => album.category === category);
+  const firstCoverIndex = filtered.findIndex((album) => album.cover);
   return (
     <>
       <PageTitle
@@ -902,14 +1032,13 @@ export default function AlbumsPage({
           <Link
             to={`/albums/${encodeURIComponent(album.id)}`}
             key={album.id}
-            className={index % 4 === 0 ? "album-collection-wide" : ""}
           >
             <div>
               {album.cover ? (
                 <img
                   src={album.cover.src}
                   alt=""
-                  loading="lazy"
+                  loading={index === firstCoverIndex ? "eager" : "lazy"}
                   decoding="async"
                 />
               ) : (

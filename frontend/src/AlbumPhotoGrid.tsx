@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import {
   DndContext,
   DragOverlay,
@@ -30,6 +30,7 @@ type PhotoGridProps = {
 
 const findTarget: CollisionDetection = (input) =>
   input.pointerCoordinates ? pointerWithin(input) : closestCenter(input);
+const PHOTO_BATCH_SIZE = 36;
 
 function PhotoTile({
   photo,
@@ -68,7 +69,7 @@ function PhotoTile({
       style={
         transform
           ? {
-              transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+              transform: `translate3d(${transform.x}px, ${transform.y}px, 0) scale(${transform.scaleX}, ${transform.scaleY})`,
               transition,
             }
           : undefined
@@ -78,7 +79,13 @@ function PhotoTile({
       onClick={click}
       onContextMenu={sortable ? (event) => event.preventDefault() : undefined}
     >
-      <img src={photo.thumbnail} alt="" loading="lazy" draggable={false} />
+      <img
+        src={photo.thumbnail}
+        alt=""
+        loading={index < 4 ? "eager" : "lazy"}
+        decoding="async"
+        draggable={false}
+      />
       {isCover && (
         <span className="album-cover-tag">
           <ImageSquare aria-hidden="true" /> 封面
@@ -100,6 +107,47 @@ export default function AlbumPhotoGrid({
 }: PhotoGridProps) {
   const [dragged, setDragged] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(PHOTO_BATCH_SIZE);
+  const more = useRef<HTMLButtonElement>(null);
+  const nextFocus = useRef<string | null>(null);
+  const visiblePhotos = useMemo(
+    () => photos.slice(0, visibleCount),
+    [photos, visibleCount],
+  );
+  const sortableIds = useMemo(
+    () => visiblePhotos.map((photo) => photo.id),
+    [visiblePhotos],
+  );
+  const hasMore = visibleCount < photos.length;
+
+  useEffect(() => {
+    if (
+      !hasMore ||
+      dragged ||
+      !more.current ||
+      typeof IntersectionObserver === "undefined"
+    )
+      return;
+    const button = more.current;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && document.activeElement !== button) {
+          observer.disconnect();
+          setVisibleCount(visibleCount + PHOTO_BATCH_SIZE);
+        }
+      },
+      { rootMargin: "0px 0px 400px 0px" },
+    );
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [hasMore, dragged, visibleCount]);
+
+  useEffect(() => {
+    if (!nextFocus.current) return;
+    document.getElementById(`activity-${nextFocus.current}`)?.focus();
+    nextFocus.current = null;
+  }, [visibleCount]);
+
   const sensors = useSensors(
     useSensor(TouchSensor, {
       activationConstraint: { delay: 420, tolerance: 8 },
@@ -119,62 +167,76 @@ export default function AlbumPhotoGrid({
   }
 
   return (
-    <DndContext
-      sensors={sensors}
-      collisionDetection={findTarget}
-      accessibility={{
-        screenReaderInstructions: {
-          draggable:
-            "按空格拿起照片，用方向键移动，再按空格放下。按 Esc 取消。",
-        },
-        announcements: {
-          onDragStart: ({ active }) => `已拿起第 ${position(active.id)} 张照片`,
-          onDragOver: ({ over }) =>
-            over ? `可移到第 ${position(over.id)} 位` : "已离开照片网格",
-          onDragEnd: ({ active, over }) =>
-            over && active.id !== over.id
-              ? `已放到第 ${position(over.id)} 位`
-              : "顺序未变",
-          onDragCancel: () => "已取消排序",
-        },
-      }}
-      onDragStart={({ active }) => setDragged(String(active.id))}
-      onDragOver={({ over }) => setHovered(over ? String(over.id) : null)}
-      onDragCancel={finish}
-      onDragEnd={({ active, over }) => {
-        finish();
-        if (over && active.id !== over.id && sortable)
-          move(String(active.id), position(over.id) - 1);
-      }}
-    >
-      <SortableContext
-        items={photos.map((photo) => photo.id)}
-        strategy={rectSortingStrategy}
+    <>
+      <DndContext
+        sensors={sensors}
+        collisionDetection={findTarget}
+        accessibility={{
+          screenReaderInstructions: {
+            draggable:
+              "按空格拿起照片，用方向键移动，再按空格放下。按 Esc 取消。",
+          },
+          announcements: {
+            onDragStart: ({ active }) =>
+              `已拿起第 ${position(active.id)} 张照片`,
+            onDragOver: ({ over }) =>
+              over ? `可移到第 ${position(over.id)} 位` : "已离开照片网格",
+            onDragEnd: ({ active, over }) =>
+              over && active.id !== over.id
+                ? `已放到第 ${position(over.id)} 位`
+                : "顺序未变",
+            onDragCancel: () => "已取消排序",
+          },
+        }}
+        onDragStart={({ active }) => setDragged(String(active.id))}
+        onDragOver={({ over }) => setHovered(over ? String(over.id) : null)}
+        onDragCancel={finish}
+        onDragEnd={({ active, over }) => {
+          finish();
+          if (over && active.id !== over.id && sortable)
+            move(String(active.id), position(over.id) - 1);
+        }}
       >
-        <section
-          className={`album-photo-grid${dragged ? " is-sorting" : ""}`}
-          aria-label="相册照片"
+        <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
+          <section
+            className={`album-photo-grid${dragged ? " is-sorting" : ""}`}
+            aria-label="相册照片"
+          >
+            {visiblePhotos.map((photo, index) => (
+              <PhotoTile
+                key={photo.id}
+                photo={photo}
+                index={index}
+                isCover={coverId === photo.id}
+                sortable={sortable}
+                open={open}
+              />
+            ))}
+          </section>
+        </SortableContext>
+        <DragOverlay dropAnimation={null} zIndex={12}>
+          {active && (
+            <div className="album-drag-preview" aria-hidden="true">
+              <img src={active.thumbnail} alt="" draggable={false} />
+              {hovered && <span>移至第 {position(hovered)} 位</span>}
+            </div>
+          )}
+        </DragOverlay>
+      </DndContext>
+      {hasMore && (
+        <button
+          ref={more}
+          className="subtle-link album-load-more"
+          type="button"
+          disabled={Boolean(dragged)}
+          onClick={() => {
+            nextFocus.current = photos[visibleCount].id;
+            setVisibleCount(visibleCount + PHOTO_BATCH_SIZE);
+          }}
         >
-          {photos.map((photo, index) => (
-            <PhotoTile
-              key={photo.id}
-              photo={photo}
-              index={index}
-              isCover={coverId === photo.id}
-              sortable={sortable}
-              open={open}
-            />
-          ))}
-        </section>
-      </SortableContext>
-      <DragOverlay dropAnimation={null} zIndex={12}>
-        {active && (
-          <div className="album-drag-preview" aria-hidden="true">
-            <img src={active.thumbnail} alt="" draggable={false} />
-            {hovered && <span>移至第 {position(hovered)} 位</span>}
-          </div>
-        )}
-      </DragOverlay>
-    </DndContext>
+          显示更多照片
+        </button>
+      )}
+    </>
   );
 }

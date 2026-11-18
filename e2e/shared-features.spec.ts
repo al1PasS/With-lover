@@ -117,6 +117,36 @@ test("two members publish, react, rename and share album covers on mobile", asyn
   await other.close();
 });
 
+test("both members see album text edits", async ({ browser, page }) => {
+  await login(page, "activity-one");
+  await page.getByRole("navigation", { name: "手机导航" }).getByRole("link", { name: "相册" }).click();
+  const title = `合成相册 ${Date.now()}`;
+  await page.getByRole("button", { name: "新建相册" }).click();
+  await page.getByLabel("相册名称").fill(title);
+  await page.getByRole("button", { name: "创建并进入相册" }).click();
+  await expect(page.getByRole("heading", { name: title })).toBeVisible();
+
+  const other = await browser.newContext({ baseURL, viewport: { width: 375, height: 812 }, colorScheme: "dark" });
+  try {
+    const partner = await other.newPage();
+    await login(partner, "activity-two");
+    await partner.goto(page.url());
+    await partner.getByRole("button", { name: "编辑相册" }).click();
+    const editor = partner.getByRole("dialog", { name: "编辑相册" });
+    await expect(editor.getByLabel("相册名称")).toHaveValue(title);
+    const edited = `${title} 已更新`;
+    await editor.getByLabel("相册名称").fill(edited);
+    await editor.getByLabel("相册说明").fill("对方补充的相册说明");
+    await editor.getByRole("button", { name: "保存修改" }).click();
+    await expect(partner.getByRole("heading", { name: edited })).toBeVisible();
+
+    await page.getByRole("link", { name: "返回照片墙" }).click();
+    await expect(page.getByRole("link", { name: new RegExp(edited) })).toContainText("对方补充的相册说明");
+  } finally {
+    await other.close();
+  }
+});
+
 test("home loads two previews, fetches one full memory on demand and refreshes after editing", async ({ page }, testInfo) => {
   await login(page, "activity-one");
   const csrf = await (await page.request.get("/api/v1/auth/csrf")).json();

@@ -423,7 +423,39 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["AlbumText"];
+                };
+            };
+            responses: {
+                /** @description 已保存的相册名称和说明 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AlbumText"];
+                    };
+                };
+                /** @description 相册不存在 */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/public/albums/{id}": {
@@ -529,7 +561,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description 每请求最多 5 张、合计 22 MiB，单张最多 10 MiB；接收 JPEG、PNG、WebP 或 GIF 并保存压缩后的 JPEG 和缩略图。网站会在上传前将 HEIC/HEIF 转为可提交的图片格式。可读照片独立于坏图保存。 */
+        /** @description 每请求最多 5 张，请求体最多 52 MiB，单张最多 50 MiB；接收 JPEG、PNG、WebP 或 GIF 并保存压缩后的 JPEG 和缩略图。网站会在上传前将 HEIC/HEIF 转为可提交的图片格式。可读照片独立于坏图保存。 */
         post: {
             parameters: {
                 query?: never;
@@ -558,6 +590,13 @@ export interface paths {
                             rejected: number[];
                         };
                     };
+                };
+                /** @description 单张照片或请求体超过大小限制 */
+                413: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
                 };
             };
         };
@@ -3545,9 +3584,11 @@ export interface components {
                 createdAt: string;
             }[];
         };
-        AlbumInput: {
+        AlbumText: {
             title: string;
             description: string;
+        };
+        AlbumInput: components["schemas"]["AlbumText"] & {
             /** @enum {string} */
             category: "event" | "thing";
             /** Format: date */

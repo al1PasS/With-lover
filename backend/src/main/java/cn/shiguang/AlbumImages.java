@@ -7,7 +7,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import javax.imageio.ImageIO;
-import javax.imageio.stream.MemoryCacheImageInputStream;
+import javax.imageio.stream.FileCacheImageInputStream;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
@@ -19,7 +19,7 @@ import java.util.concurrent.Semaphore;
 
 @Component
 class AlbumImages {
-    static final long MAX_PHOTO_BYTES = 10L * 1024 * 1024;
+    static final long MAX_PHOTO_BYTES = 50L * 1024 * 1024;
     private final Semaphore slots = new Semaphore(2);
     record Image(byte[] content, byte[] thumbnail) {}
 
@@ -55,7 +55,7 @@ class AlbumImages {
     }
 
     private BufferedImage read(InputStream raw, int target) throws IOException {
-        try (var stream = new MemoryCacheImageInputStream(raw)) {
+        try (var stream = new FileCacheImageInputStream(raw, null)) {
             var readers = ImageIO.getImageReaders(stream);
             if (!readers.hasNext()) throw invalid();
             var reader = readers.next();
@@ -97,6 +97,6 @@ class AlbumImages {
     }
 
     private static ResponseStatusException invalid() {
-        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "无法读取这张图片，请选择 10 MB 以内的 JPEG、PNG、WebP 或 GIF");
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "无法读取这张图片，请选择 50 MB 以内的 JPEG、PNG、WebP 或 GIF");
     }
 }

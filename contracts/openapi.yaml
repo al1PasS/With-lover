@@ -126,6 +126,19 @@ paths:
                 properties:
                   album: { $ref: "#/components/schemas/Album" }
                   photos: { type: array, items: { $ref: "#/components/schemas/AlbumPhoto" } }
+    patch:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AlbumText" }
+      responses:
+        "200":
+          description: 已保存的相册名称和说明
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlbumText" }
+        "404": { description: 相册不存在 }
     delete:
       responses:
         "204": { description: 已删除相册和照片 }
@@ -152,7 +165,7 @@ paths:
   /albums/{id}/photos:
     parameters: *albumId
     post:
-      description: 每请求最多 5 张、合计 22 MiB，单张最多 10 MiB；接收 JPEG、PNG、WebP 或 GIF 并保存压缩后的 JPEG 和缩略图。网站会在上传前将 HEIC/HEIF 转为可提交的图片格式。可读照片独立于坏图保存。
+      description: 每请求最多 5 张，请求体最多 52 MiB，单张最多 50 MiB；接收 JPEG、PNG、WebP 或 GIF 并保存压缩后的 JPEG 和缩略图。网站会在上传前将 HEIC/HEIF 转为可提交的图片格式。可读照片独立于坏图保存。
       requestBody:
         required: true
         content:
@@ -173,6 +186,7 @@ paths:
                 properties:
                   photos: { type: array, items: { $ref: "#/components/schemas/AlbumPhoto" } }
                   rejected: { type: array, items: { type: integer } }
+        "413": { description: 单张照片或请求体超过大小限制 }
   /albums/{id}/photos/order:
     parameters: *albumId
     put:
@@ -1217,14 +1231,20 @@ components:
               authorId: { type: integer }
               body: { type: string }
               createdAt: { type: string, format: date-time }
-    AlbumInput:
+    AlbumText:
       type: object
-      required: [title, description, category, date]
+      required: [title, description]
       properties:
         title: { type: string, minLength: 1, maxLength: 80 }
         description: { type: string, maxLength: 300 }
-        category: { type: string, enum: [event, thing] }
-        date: { type: string, format: date }
+    AlbumInput:
+      allOf:
+        - $ref: "#/components/schemas/AlbumText"
+        - type: object
+          required: [category, date]
+          properties:
+            category: { type: string, enum: [event, thing] }
+            date: { type: string, format: date }
     Album:
       allOf:
         - $ref: "#/components/schemas/AlbumInput"
