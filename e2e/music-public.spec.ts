@@ -212,6 +212,8 @@ async function mockMusic(
       [
         "/memories",
         "/public/memories",
+        "/memories/recent",
+        "/public/memories/recent",
         "/trash",
         "/anniversaries",
         "/places",

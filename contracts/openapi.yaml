@@ -738,6 +738,55 @@ paths:
     post:
       responses:
         "204": { description: 会话已销毁 }
+  /memories/recent:
+    get:
+      responses: &recentMemoryCards
+        "200":
+          description: 首页按事件日期倒序展示的两条回忆卡片
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 2
+                items: { $ref: "#/components/schemas/RecentMemory" }
+  /public/memories/recent:
+    get:
+      security: []
+      description: 首页和时光均开放时仅展示已发布的公开摘要。省略成员署名和发布时间。
+      responses: *recentMemoryCards
+  /memories/order:
+    get:
+      responses: &memoryOrder
+        "200":
+          description: 供详情翻篇的最近 24 条回忆 ID
+          content:
+            application/json:
+              schema: { type: array, maxItems: 24, items: { type: string, format: uuid } }
+  /public/memories/order:
+    get:
+      security: []
+      responses: *memoryOrder
+  /memories/{id}/thumbnail:
+    parameters: &memoryThumbnailId
+      - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      - { name: v, in: query, required: true, schema: { type: string }, description: 卡片返回的图片版本标识 }
+    get:
+      responses: &memoryThumbnail
+        "200":
+          description: 最长边 640px 的回忆卡片配图
+          content:
+            image/jpeg:
+              schema: { type: string, format: binary }
+            image/png:
+              schema: { type: string, format: binary }
+        "404": { description: 回忆或配图不可用 }
+        "422": { description: 原配图无法解析 }
+        "429": { description: 图片处理中，请稍后重试 }
+  /public/memories/{id}/thumbnail:
+    parameters: *memoryThumbnailId
+    get:
+      security: []
+      responses: *memoryThumbnail
   /public/memories:
     get:
       security: []
@@ -1081,6 +1130,19 @@ components:
         anniversaries: { type: boolean }
         albums: { type: boolean }
         places: { type: boolean }
+    RecentMemory:
+      type: object
+      required: [id, title, date, tag, summary, published]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        date: { type: string, format: date }
+        tag: { type: string }
+        summary: { type: string, maxLength: 160 }
+        thumbnail: { type: string, description: 图片地址，无图时省略 }
+        published: { type: boolean }
+        authorId: { type: integer }
+        publishedAt: { type: string, format: date-time }
     MemoryInput:
       type: object
       required:

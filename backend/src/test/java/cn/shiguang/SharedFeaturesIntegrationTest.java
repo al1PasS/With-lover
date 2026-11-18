@@ -70,6 +70,68 @@ class SharedFeaturesIntegrationTest {
             .andExpect(jsonPath("$.authorId").doesNotExist()).andExpect(jsonPath("$.publishedAt").doesNotExist());
     }
 
+    @Test @Transactional void homeReadsTwoSmallCardsAndReusesOnlyAuthorizedCurrentThumbnails() throws Exception {
+        // Seed legacy rows directly. They predate the thumbnail table and include a transparent photo.
+        var png = new ByteArrayOutputStream();
+        ImageIO.write(new BufferedImage(1280, 720, BufferedImage.TYPE_INT_ARGB), "png", png);
+        String original = "data:image/png;base64," + Base64.getEncoder().encodeToString(png.toByteArray());
+        var ids = new java.util.ArrayList<java.util.UUID>();
+        for (int i = 0; i < 25; i++) {
+            var id = java.util.UUID.randomUUID();
+            db.update("""
+                INSERT INTO memories(id,title,body,date,tag,image,published,public_visible,public_summary,updated_at,author_id)
+                VALUES(?, ?, ?, date '2090-01-01' + ?, 'test', ?, ?, ?, ?, now(), 1)
+                """, id, "test-" + i, "private body ".repeat(100), i, original, i != 23, i != 24, i == 24 ? "" : "public excerpt");
+            ids.add(id);
+        }
+        mvc.perform(get("/api/v1/memories/recent")).andExpect(status().isUnauthorized());
+        var member = body(mvc.perform(get("/api/v1/memories/recent").with(one)).andExpect(status().isOk()));
+        assertEquals(2, member.size());
+        assertEquals(ids.get(24).toString(), member.get(0).get("id").asText());
+        assertEquals(160, member.get(0).get("summary").asText().length());
+        assertFalse(member.toString().contains("base64"));
+        assertFalse(member.get(0).has("body"));
+        assertTrue(member.toString().length() < 1200);
+        var policy = put("/api/v1/admin/privacy").with(one).with(csrf()).contentType("application/json");
+        mvc.perform(policy.content("{\"mode\":\"SELECTED\",\"home\":true,\"timeline\":true}")).andExpect(status().isOk());
+        var guest = body(mvc.perform(get("/api/v1/public/memories/recent")).andExpect(status().isOk()));
+        assertEquals(2, guest.size());
+        assertEquals(ids.get(22).toString(), guest.get(0).get("id").asText());
+        assertEquals("public excerpt", guest.get(0).get("summary").asText());
+        assertFalse(guest.toString().contains("private body"));
+        assertFalse(guest.get(0).has("authorId"));
+        assertFalse(guest.get(0).has("publishedAt"));
+        mvc.perform(get("/api/v1/memories/order").with(one)).andExpect(jsonPath("$.length()").value(24));
+        mvc.perform(get("/api/v1/public/memories/order")).andExpect(jsonPath("$[0]").value(ids.get(22).toString()));
+        String privateImage = member.get(0).get("thumbnail").asText();
+        mvc.perform(get(privateImage)).andExpect(status().isUnauthorized());
+        mvc.perform(get(privateImage.replace("/v1/", "/v1/public/"))).andExpect(status().isNotFound());
+        String image = guest.get(0).get("thumbnail").asText();
+        var cold = mvc.perform(get(image)).andExpect(status().isOk()).andExpect(content().contentType("image/png"))
+            .andExpect(header().string("Cache-Control", "private, no-store")).andReturn().getResponse().getContentAsByteArray();
+        var decoded = ImageIO.read(new java.io.ByteArrayInputStream(cold));
+        assertEquals(640, decoded.getWidth());
+        assertEquals(360, decoded.getHeight());
+        assertTrue(decoded.getColorModel().hasAlpha());
+        mvc.perform(get(image)).andExpect(content().bytes(cold));
+        assertEquals(1, db.queryForObject("SELECT count(*) FROM memory_card_thumbnails WHERE memory_id=?", Integer.class, ids.get(22)));
+        mvc.perform(get("/api/v1/public/memories/" + ids.get(22))).andExpect(jsonPath("$.image").value(original));
+        db.update("UPDATE memories SET image='', version=version+1 WHERE id=?", ids.get(22));
+        mvc.perform(get(image)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/public/memories/recent")).andExpect(jsonPath("$[0].thumbnail").doesNotExist());
+        db.update("UPDATE memories SET image=?, version=version+1 WHERE id=?", original, ids.get(22));
+        mvc.perform(get(image)).andExpect(status().isNotFound());
+        image = body(mvc.perform(get("/api/v1/public/memories/recent"))).get(0).get("thumbnail").asText();
+        mvc.perform(get(image)).andExpect(content().bytes(cold));
+        assertEquals(2, db.queryForObject("SELECT memory_version FROM memory_card_thumbnails WHERE memory_id=?", Long.class, ids.get(22)));
+        db.update("UPDATE memories SET deleted_at=now() WHERE id=?", ids.get(22));
+        mvc.perform(get(image)).andExpect(status().isNotFound());
+        mvc.perform(get("/api/v1/public/memories/recent")).andExpect(jsonPath("$[0].id").value(ids.get(21).toString()));
+        mvc.perform(policy.content("{\"mode\":\"PRIVATE\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/public/memories/recent")).andExpect(status().isForbidden());
+        mvc.perform(get(guest.get(1).get("thumbnail").asText())).andExpect(status().isForbidden());
+    }
+
     @Test @Transactional void validatesCommentAccessAndKeepsLikesPerAccount() throws Exception {
         String value="[{\"id\":\"test-post\",\"type\":\"story\",\"title\":\"合成故事\",\"body\":\"合成正文\",\"authorId\":2,\"publishedAt\":\"2000-01-01T00:00:00Z\"}]";
         var saved=body(mvc.perform(put("/api/v1/settings/messages").with(one).with(csrf()).contentType("application/json")

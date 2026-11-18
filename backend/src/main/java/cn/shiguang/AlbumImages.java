@@ -10,7 +10,9 @@ import javax.imageio.ImageIO;
 import javax.imageio.stream.MemoryCacheImageInputStream;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
@@ -24,7 +26,36 @@ class AlbumImages {
     Image prepare(MultipartFile file) {
         if (file.isEmpty() || file.getSize() > MAX_PHOTO_BYTES) throw invalid();
         if (!slots.tryAcquire()) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "照片正在处理中，请稍后重试");
-        try (var raw = file.getInputStream(); var stream = new MemoryCacheImageInputStream(raw)) {
+        try (var raw = file.getInputStream()) {
+            BufferedImage source = read(raw, 1800);
+            try {
+                return new Image(jpeg(source, 1800, 0.88), jpeg(source, 640, 0.83));
+            } finally { source.flush(); }
+        } catch (IOException | IllegalArgumentException e) { throw invalid(); }
+        finally { slots.release(); }
+    }
+
+    record Thumbnail(String mime, byte[] content) {}
+
+    Thumbnail thumbnail(byte[] bytes) {
+        if (!slots.tryAcquire()) throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "照片正在处理中，请稍后重试");
+        try {
+            BufferedImage source = read(new ByteArrayInputStream(bytes), 640);
+            try {
+                if (!source.getColorModel().hasAlpha())
+                    return new Thumbnail("image/jpeg", jpeg(source, 640, 0.83));
+                try (var out = new ByteArrayOutputStream()) {
+                    Thumbnails.of(source).scale(Math.min(1, 640.0 / Math.max(source.getWidth(), source.getHeight())))
+                        .outputFormat("png").toOutputStream(out);
+                    return new Thumbnail("image/png", out.toByteArray());
+                }
+            } finally { source.flush(); }
+        } catch (IOException | IllegalArgumentException e) { throw invalid(); }
+        finally { slots.release(); }
+    }
+
+    private BufferedImage read(InputStream raw, int target) throws IOException {
+        try (var stream = new MemoryCacheImageInputStream(raw)) {
             var readers = ImageIO.getImageReaders(stream);
             if (!readers.hasNext()) throw invalid();
             var reader = readers.next();
@@ -34,18 +65,14 @@ class AlbumImages {
                 int width = reader.getWidth(0), height = reader.getHeight(0);
                 if (width < 1 || height < 1 || width > 16000 || height > 16000 || (long) width * height > 48_000_000L)
                     throw invalid();
-                int sampling = Math.max(1, Math.max(width, height) / 1800);
+                int sampling = Math.max(1, Math.max(width, height) / target);
                 var params = reader.getDefaultReadParam();
                 params.setSourceSubsampling(sampling, sampling, 0, 0);
                 BufferedImage source = reader.read(0, params);
                 if (source == null) throw invalid();
-                try {
-                    var content = jpeg(source, 1800, 0.88);
-                    return new Image(content, jpeg(source, 640, 0.83));
-                } finally { source.flush(); }
+                return source;
             } finally { reader.dispose(); }
-        } catch (IOException | IllegalArgumentException e) { throw invalid(); }
-        finally { slots.release(); }
+        }
     }
 
     private byte[] jpeg(BufferedImage source, int max, double quality) throws IOException {

@@ -116,3 +116,66 @@ test("two members publish, react, rename and share album covers on mobile", asyn
   await reopened.close();
   await other.close();
 });
+
+test("home loads two previews, fetches one full memory on demand and refreshes after editing", async ({ page }, testInfo) => {
+  await login(page, "activity-one");
+  const csrf = await (await page.request.get("/api/v1/auth/csrf")).json();
+  const headers = { [csrf.headerName]: csrf.token };
+  const image = "data:image/webp;base64," + (await (await page.request.get("/images/coffee.webp")).body()).toString("base64");
+  const ids: string[] = [];
+  const title = `首页验收 ${Date.now()}`;
+  try {
+    for (let day = 1; day <= 24; day++) {
+      const response = await page.request.post("/api/v1/memories", { headers, data: {
+        title: `${title} ${day}`, body: "只有完整详情才显示的故事。".repeat(30),
+        date: `2099-12-${String(day).padStart(2, "0")}`, city: "", tag: "烟火日常",
+        image, published: true, publicVisible: false, publicSummary: "", version: 0,
+      } });
+      expect(response.status()).toBe(201);
+      ids.push((await response.json()).id);
+    }
+    const requests: string[] = [];
+    page.on("request", req => {
+      const path = new URL(req.url()).pathname;
+      if (path.startsWith("/api/v1/memories")) requests.push(path + new URL(req.url()).search);
+    });
+    const recent = page.waitForResponse(res => res.url().endsWith("/api/v1/memories/recent"));
+    await page.goto("/");
+    const result = await recent;
+    const cards = await result.json();
+    expect(cards.map((card: { id: string }) => card.id)).toEqual(ids.slice(-2).reverse());
+    const newBytes = (await result.body()).length;
+    expect(newBytes).toBeLessThan(3000);
+    const images = page.locator(".recent .photo-button img");
+    await expect(images).toHaveCount(2);
+    await images.last().scrollIntoViewIfNeeded();
+    await expect.poll(() => images.evaluateAll(els => els.map(el => (el as HTMLImageElement).naturalWidth))).toEqual([640, 640]);
+    expect(new Set(requests)).toEqual(new Set(["/api/v1/memories/recent", ...cards.map((card: {thumbnail: string}) => card.thumbnail)]));
+    const oldBytes = (await (await page.request.get("/api/v1/memories")).body()).length;
+    const thumbnailBytes = await Promise.all(cards.map(async (card: { thumbnail: string }) =>
+      (await (await page.request.get(card.thumbnail)).body()).length));
+    testInfo.annotations.push({ type: "fixture-bytes", description: JSON.stringify({ oldBytes, newBytes, thumbnailBytes }) });
+
+    await page.locator(".recent").getByText(`${title} 24`, { exact: true }).click();
+    const detail = page.getByRole("dialog");
+    await expect(detail.locator(".detail-photo")).toHaveAttribute("src", image);
+    await expect(detail.locator(".story-body")).toHaveText("只有完整详情才显示的故事。".repeat(30));
+    await detail.getByRole("button", { name: "下一篇" }).click();
+    await expect(detail.getByRole("heading")).toHaveText(`${title} 23`);
+    await detail.getByRole("button", { name: "下一篇" }).click();
+    await expect(detail.getByRole("heading")).toHaveText(`${title} 22`);
+    await detail.getByRole("button", { name: "上一篇" }).click();
+    await expect(detail.getByRole("heading")).toHaveText(`${title} 23`);
+    await detail.getByRole("button", { name: "编辑回忆" }).click();
+    await expect(detail.getByLabel("想记住的故事")).toHaveValue("只有完整详情才显示的故事。".repeat(30));
+    await detail.getByLabel("给这一刻起个名字").fill(`${title} 已编辑`);
+    await detail.getByRole("button", { name: "收藏这一刻" }).click();
+    await expect(page.locator(".recent")).toContainText(`${title} 已编辑`);
+    expect(requests).not.toContain("/api/v1/memories");
+    await page.getByRole("link", { name: "全部回忆" }).click();
+    await expect(page.locator(".timeline-grid .text-title")).toHaveCount(24);
+    expect(requests).toContain("/api/v1/memories");
+  } finally {
+    for (const id of ids) await page.request.delete(`/api/v1/memories/${id}`, { headers });
+  }
+});

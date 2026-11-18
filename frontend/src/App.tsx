@@ -66,6 +66,7 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { demoMemories, demoAnniversaries } from "./demo";
 import { dayDiff, nextLunarBirthday, today } from "./dates";
+import type { components } from "./api/schema";
 import { request, resetCsrf } from "./api/client";
 import {
   defaultPrivacy,
@@ -77,6 +78,8 @@ import {
 } from "./types";
 import { PlayPage, RecordsPage, VisitorGate, WishesPage } from "./LittleWorld";
 import { PHOTO_ACCEPT, photoDataUrl, preparePhoto } from "./imageUpload";
+type RecentMemory = components["schemas"]["RecentMemory"];
+
 const AlbumsPage = lazy(() => import("./Albums"));
 
 const nav = [
@@ -178,6 +181,9 @@ function demoPrivacy() {
   }
 }
 export default function App() {
+  const [recentMemories, setRecentMemories] = useState<RecentMemory[]>([]);
+  const [memoryOrder, setMemoryOrder] = useState<string[]>([]);
+  const [homeMemoryId, setHomeMemoryId] = useState<string | null>(null);
   const [loginHint, setLoginHint] = useState("");
   const [loginUsername, setLoginUsername] = useState("");
   const [activityTarget, setActivityTarget] = useState<HTMLDivElement | null>(
@@ -232,14 +238,20 @@ export default function App() {
   const [privacyBusy, setPrivacyBusy] = useState(false);
   const music = useBackgroundMusic(user, loaded);
   const members = useMemberDirectory(user);
-  const memoryAuthor = (m: Memory) =>
+  const memoryAuthor = (m: Pick<Memory, "authorId">) =>
     typeof m.authorId === "number"
       ? members.find((member) => member.id === m.authorId)?.name || "未署名"
       : m.authorId
         ? demoMemberName(m.authorId)
         : "未署名";
   const loadGeneration = useRef(0);
-  type Resource = "memories" | "trash" | "anniversaries" | "places";
+  type Resource =
+    | "memories/recent"
+    | "memories/order"
+    | "memories"
+    | "trash"
+    | "anniversaries"
+    | "places";
   const resourceLoads = useRef(new Map<Resource, AbortController>());
   const readyResources = useRef(new Set<Resource>());
   const failedResources = useRef(new Set<Resource>());
@@ -253,19 +265,26 @@ export default function App() {
     resourceLoads.current.delete(resource);
     failedResources.current.delete(resource);
     if (keepReady) readyResources.current.add(resource);
-    else readyResources.current.delete(resource);
-    setMemoriesLoading(
-      resourceLoads.current.has("memories") ||
-        resourceLoads.current.has("trash"),
-    );
-    setAnniversariesLoading(resourceLoads.current.has("anniversaries"));
-    setPlacesLoading(resourceLoads.current.has("places"));
+    else {
+      readyResources.current.delete(resource);
+      if (resource === "memories/order") setMemoryOrder([]);
+    }
+    updateResourceLoading();
+  }
+  function updateResourceLoading() {
+    const loads = resourceLoads.current;
+    setMemoriesLoading(loads.has("memories/recent") || loads.has("memories") || loads.has("trash"));
+    setAnniversariesLoading(loads.has("anniversaries"));
+    setPlacesLoading(loads.has("places"));
   }
   function resetResources() {
     for (const controller of resourceLoads.current.values()) controller.abort();
     resourceLoads.current.clear();
     readyResources.current.clear();
     failedResources.current.clear();
+    setRecentMemories([]);
+    setMemoryOrder([]);
+    setHomeMemoryId(null);
     activityResourceKey.current = "";
     ++memorySelection.current;
     setMemoryImageBusy(false);
@@ -318,7 +337,12 @@ export default function App() {
   const q = params.get("q") || "",
     tag = params.get("tag") || "烟火日常";
   const activityId = user ? params.get("activity") : null;
-  const memoryTarget = pathname === "/timeline" ? activityId : null;
+  const homeCanShowMemories =
+    Boolean(user) ||
+    (visitorCanView(privacy, "home") && visitorCanView(privacy, "timeline"));
+  const homeDetail = pathname === "/" && homeCanShowMemories ? homeMemoryId : null;
+  const memoryTarget = pathname === "/timeline" ? activityId : homeDetail;
+  const detailKey = JSON.stringify([location.key, memoryTarget, user]);
   const [activityMemory, setActivityMemory] = useState<{
     key: string;
     status: "loading" | "done" | "error";
@@ -338,6 +362,7 @@ export default function App() {
   }, [dark]);
   useEffect(() => {
     setSelected(null);
+    setHomeMemoryId(null);
     setError("");
     setPlacesError("");
     failedResources.current.clear();
@@ -350,15 +375,15 @@ export default function App() {
   }, [notice]);
   const memoryLoading = Boolean(
     memoryTarget &&
-    (activityMemory?.key !== location.key || activityMemory.status === "loading"),
+    (activityMemory?.key !== detailKey || activityMemory.status === "loading"),
   );
   const memoryError =
-    memoryTarget && activityMemory?.key === location.key && activityMemory.status === "error"
+    memoryTarget && activityMemory?.key === detailKey && activityMemory.status === "error"
       ? activityMemory.message
       : undefined;
   useEffect(() => {
     if (!memoryTarget) return;
-    const key = location.key;
+    const key = detailKey;
     const controller = new AbortController();
     const done = (memory?: Memory, message?: string) => {
       if (controller.signal.aborted) return;
@@ -371,11 +396,11 @@ export default function App() {
       const memory = memories.find((m) => m.id === memoryTarget && !m.deleted);
       done(memory, memory ? undefined : "这段回忆已经删除或不存在");
     } else
-      void request<Memory>(`/memories/${encodeURIComponent(memoryTarget)}`, {
+      void request<Memory>(`${user ? "" : "/public"}/memories/${encodeURIComponent(memoryTarget)}`, {
         signal: controller.signal,
       }).then((memory) => done(memory), (e: Error) => done(undefined, e.message));
     return () => controller.abort();
-  }, [location.key, memoryTarget, activityMemoryRetry, user]);
+  }, [detailKey, memoryTarget, activityMemoryRetry, user]);
   useEffect(() => {
     if (!activityId || pathname === "/timeline" || pathname.startsWith("/albums/"))
       return;
@@ -458,9 +483,10 @@ export default function App() {
     if (demo || !loaded) return;
     const wanted = new Set<Resource>();
     const prefix = user ? "" : "/public";
+    if (pathname === "/" && homeCanShowMemories) wanted.add("memories/recent");
+    if (homeDetail) wanted.add("memories/order");
     if (
-      (pathname === "/" ||
-        pathname === "/admin" ||
+      (pathname === "/admin" ||
         (pathname === "/timeline" && !memoryLoading)) &&
       (user || visitorCanView(privacy, "timeline"))
     )
@@ -499,13 +525,15 @@ export default function App() {
       const controller = new AbortController();
       resourceLoads.current.set(resource, controller);
       const path = resource === "trash" ? "/trash" : `${prefix}/${resource}`;
-      void request<Memory[] | Anniversary[] | Place[]>(path, {
+      void request<RecentMemory[] | string[] | Memory[] | Anniversary[] | Place[]>(path, {
         signal: controller.signal,
       })
         .then((rows) => {
           if (!current(resource, controller)) return;
           readyResources.current.add(resource);
-          if (resource === "places") {
+          if (resource === "memories/recent") setRecentMemories(rows as RecentMemory[]);
+          else if (resource === "memories/order") setMemoryOrder(rows as string[]);
+          else if (resource === "places") {
             setPlaces(rows as Place[]);
             setPlacesError("");
           } else if (resource === "anniversaries")
@@ -537,19 +565,11 @@ export default function App() {
         .finally(() => {
           if (!current(resource, controller)) return;
           resourceLoads.current.delete(resource);
-          updateLoading();
+          updateResourceLoading();
         });
     }
-    function updateLoading() {
-      setMemoriesLoading(
-        resourceLoads.current.has("memories") ||
-          resourceLoads.current.has("trash"),
-      );
-      setAnniversariesLoading(resourceLoads.current.has("anniversaries"));
-      setPlacesLoading(resourceLoads.current.has("places"));
-    }
-    updateLoading();
-  }, [loaded, pathname, privacy, user, location.key, resourceRetry, memoryLoading]);
+    updateResourceLoading();
+  }, [loaded, pathname, privacy, user, location.key, resourceRetry, memoryLoading, homeDetail, homeCanShowMemories]);
   function invalidateResources(...resources: Resource[]) {
     for (const resource of resources) cancelResource(resource);
     setResourceRetry((value) => value + 1);
@@ -803,7 +823,7 @@ export default function App() {
           editing ? "修改了回忆" : "新增了回忆",
           `/timeline?activity=${saved.id}`,
         );
-      if (!demo) invalidateResources("memories", "trash");
+      if (!demo) invalidateResources("memories/recent", "memories/order", "memories", "trash");
       setMemories((prev) => [saved, ...prev.filter((x) => x.id !== saved.id)]);
       setModal(null);
       setNotice(m.published ? "这一刻，已经好好收藏" : "草稿已保存");
@@ -820,7 +840,7 @@ export default function App() {
           restore ? "/trash/" + m.id + "/restore" : "/memories/" + m.id,
           { method: restore ? "POST" : "DELETE" },
         );
-      if (!demo) invalidateResources("memories", "trash");
+      if (!demo) invalidateResources("memories/recent", "memories/order", "memories", "trash");
       setMemories((prev) =>
         prev.map((x) => (x.id === m.id ? { ...x, deleted: !restore } : x)),
       );
@@ -1059,16 +1079,32 @@ export default function App() {
       {action}
     </div>
   );
-  function card(m: Memory, i: number) {
+  function stepMemory(direction: -1 | 1) {
+    if (!selected) return;
+    const ids = homeDetail ? memoryOrder : visible.map((m) => m.id);
+    if (!ids.length) return;
+    const index = ids.indexOf(selected.id);
+    const next = (index + direction + ids.length) % ids.length;
+    if (homeDetail) setHomeMemoryId(ids[next]);
+    else setSelected(visible[next]);
+  }
+
+  function card(m: Memory | RecentMemory, i: number) {
+    const isPreview = "summary" in m;
+    const image = isPreview ? m.thumbnail : m.image;
+    const open = () => {
+      if (isPreview) setHomeMemoryId(m.id);
+      else setSelected(m);
+    };
     return (
       <article
         className="memory-card"
         key={m.id}
         style={{ animationDelay: `${i * 60}ms` }}
       >
-        <button className="photo-button" onClick={() => setSelected(m)}>
-          {m.image ? (
-            <img src={m.image} alt={m.title} loading="lazy" />
+        <button className="photo-button" onClick={open}>
+          {image ? (
+            <img src={image} alt={m.title} loading="lazy" />
           ) : (
             <div className="no-photo">
               <Notebook size={44} />
@@ -1086,16 +1122,16 @@ export default function App() {
               </time>
             )}
           </div>
-          <button className="text-title" onClick={() => setSelected(m)}>
+          <button className="text-title" onClick={open}>
             {m.title}
           </button>
-          <p>{m.publicSummary || m.body}</p>
+          <p>{isPreview ? m.summary : m.publicSummary || m.body}</p>
           <div className="card-bottom">
             <span className="tag">{m.tag}</span>
             {user && m.published && (
               <button
                 className="memory-discuss"
-                onClick={() => setSelected(m)}
+                onClick={open}
                 aria-label={`查看${m.title}的点赞和评论`}
               >
                 <ChatCircleDots size={18} aria-hidden="true" />
@@ -1346,9 +1382,9 @@ export default function App() {
                         {memoriesLoading ? (
                           <MemoryLoadingCards count={2} />
                         ) : (
-                          visible.slice(0, 2).map(card)
+                          (demo ? visible.slice(0, 2) : recentMemories).map(card)
                         )}
-                        {!memoriesLoading && visible.length === 0 && (
+                        {!memoriesLoading && (demo ? visible : recentMemories).length === 0 && (
                           <div className="home-memory-empty">
                             <LockSimple weight="duotone" />
                             <p>
@@ -2301,7 +2337,8 @@ export default function App() {
         onOpenChange={(o) => {
           if (!o) {
             setSelected(null);
-            if (memoryTarget) {
+            if (homeDetail) setHomeMemoryId(null);
+            else if (memoryTarget) {
               const next = new URLSearchParams(params);
               next.delete("activity");
               setParams(next, { replace: true, preventScrollReset: true });
@@ -2322,7 +2359,7 @@ export default function App() {
                 </Dialog.Title>
                 {memoryLoading ? (
                   <Dialog.Description className="sr-only">
-                    正在加载这条更新的内容
+                    正在加载回忆详情
                   </Dialog.Description>
                 ) : (
                   <>
@@ -2377,14 +2414,8 @@ export default function App() {
                   )}
                   <div className="detail-controls">
                     <button
-                      onClick={() => {
-                        const n = visible.findIndex(
-                          (m) => m.id === selected.id,
-                        );
-                        setSelected(
-                          visible[(n - 1 + visible.length) % visible.length],
-                        );
-                      }}
+                      disabled={Boolean(homeDetail) && !memoryOrder.length}
+                      onClick={() => stepMemory(-1)}
                     >
                       <ArrowLeft />
                       上一篇
@@ -2393,6 +2424,7 @@ export default function App() {
                       <button
                         onClick={() => {
                           openEdit(selected);
+                          setHomeMemoryId(null);
                           setSelected(null);
                         }}
                       >
@@ -2400,12 +2432,8 @@ export default function App() {
                       </button>
                     )}
                     <button
-                      onClick={() => {
-                        const n = visible.findIndex(
-                          (m) => m.id === selected.id,
-                        );
-                        setSelected(visible[(n + 1) % visible.length]);
-                      }}
+                      disabled={Boolean(homeDetail) && !memoryOrder.length}
+                      onClick={() => stepMemory(1)}
                     >
                       下一篇
                       <ArrowRight />

@@ -220,7 +220,7 @@ export async function mockPlacesApi(
         : route.fulfill({ status: 403, json: { message: "合成私密空间" } });
     if (path === "/music")
       return json(route, { revision: 0, selectedTrackId: null, tracks: [] });
-    if (["/memories", "/trash", "/anniversaries"].includes(path))
+    if (["/memories", "/memories/recent", "/trash", "/anniversaries"].includes(path))
       return json(route, []);
     if (path === "/media/cover")
       return route.fulfill({

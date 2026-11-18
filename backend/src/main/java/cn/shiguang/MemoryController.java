@@ -1,6 +1,7 @@
 package cn.shiguang;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.*;
 import org.springframework.web.server.ResponseStatusException;
 import jakarta.validation.Valid;
@@ -10,9 +11,12 @@ import java.util.*;
 class MemoryController {
  private final MemoryRepository repo;private final MemoryService service;private final PrivacyService privacy;
  MemoryController(MemoryRepository repo,MemoryService service,PrivacyService privacy){this.repo=repo;this.service=service;this.privacy=privacy;}
- @GetMapping("/public/memories") List<MemoryService.PublicView> publicList(@RequestParam(defaultValue="0") int page){privacy.requirePublic("timeline");return repo.findByPublishedTrueAndPublicVisibleTrueAndDeletedAtIsNullOrderByDateDesc(PageRequest.of(Math.max(0,page),24)).map(MemoryService::publicView).getContent();}
+ private static PageRequest timelinePage(int page) {
+  return PageRequest.of(Math.max(0,page), 24, Sort.by(Sort.Direction.DESC,"updatedAt","id"));
+ }
+ @GetMapping("/public/memories") List<MemoryService.PublicView> publicList(@RequestParam(defaultValue="0") int page){privacy.requirePublic("timeline");return repo.findByPublishedTrueAndPublicVisibleTrueAndDeletedAtIsNullOrderByDateDesc(timelinePage(page)).map(MemoryService::publicView).getContent();}
  @GetMapping("/public/memories/{id}") MemoryService.PublicView publicDetail(@PathVariable UUID id){privacy.requirePublic("timeline");Memory m=repo.findById(id).filter(x->x.published&&x.publicVisible&&x.deletedAt==null).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND));return MemoryService.publicView(m);}
- @GetMapping("/memories") List<MemoryService.PrivateView> list(@RequestParam(defaultValue="0") int page){return repo.findByDeletedAtIsNullOrderByDateDesc(PageRequest.of(Math.max(0,page),24)).map(MemoryService::privateView).getContent();}
+ @GetMapping("/memories") List<MemoryService.PrivateView> list(@RequestParam(defaultValue="0") int page){return repo.findByDeletedAtIsNullOrderByDateDesc(timelinePage(page)).map(MemoryService::privateView).getContent();}
  @GetMapping("/memories/{id}") MemoryService.PrivateView detail(@PathVariable UUID id){return repo.findById(id).filter(m->m.deletedAt==null).map(MemoryService::privateView).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"这段回忆已经删除"));}
  @PostMapping("/memories") @ResponseStatus(HttpStatus.CREATED) MemoryService.PrivateView create(@Valid @RequestBody MemoryService.Input in,Principal p){return service.save(null,in,p.getName());}
  @PatchMapping("/memories/{id}") MemoryService.PrivateView update(@PathVariable UUID id,@Valid @RequestBody MemoryService.Input in,Principal p){return service.save(id,in,p.getName());}
